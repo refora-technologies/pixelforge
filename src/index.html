@@ -66,6 +66,11 @@
   <symbol id="ic-dot" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="12" r="5"/>
   </symbol>
+  <symbol id="ic-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="16" x2="12" y2="12"></line>
+    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+  </symbol>
 </svg>
 
 <body>
@@ -77,7 +82,7 @@
 </div>
 
 <!-- ═══════════════════════ SETUP OVERLAY ═══════════════════════ -->
-<div id="setup-overlay">
+<div id="setup-overlay" style="display:none">
   <div class="setup-card">
 
     <div class="setup-head">
@@ -94,7 +99,7 @@
           </div>
           <div class="dep-text">
             <div class="dep-name">Upscayl Engine (upscayl-bin)</div>
-            <div class="dep-desc">AI upscaling engine + neural models (~200 MB)</div>
+            <div class="dep-desc">AI upscaling engine binary (~20 MB)</div>
           </div>
           <div class="dep-status-icon" id="dep-upscayl-status">
             <svg width="16" height="16"><use href="#ic-dot"/></svg>
@@ -220,6 +225,10 @@
       <div class="nav-item" data-page="settings" id="nav-settings">
         <svg class="nav-icon" width="15" height="15"><use href="#ic-settings"/></svg>
         Settings
+      </div>
+      <div class="nav-item" data-page="about" id="nav-about">
+        <svg class="nav-icon" width="15" height="15"><use href="#ic-info"/></svg>
+        About
       </div>
 
       <div class="sidebar-footer">
@@ -604,6 +613,30 @@
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ ABOUT ═══ -->
+      <div class="page" id="page-about">
+        <div class="page-header">
+          <div class="page-header-left">
+            <div class="page-title">About PixelForge</div>
+            <div class="page-sub">Application details and information</div>
+          </div>
+        </div>
+
+        <div class="card mb-12">
+          <div class="card-header">
+            <svg class="card-header-icon" width="14" height="14"><use href="#ic-info"/></svg>
+            <span class="card-header-title">About This App</span>
+          </div>
+          <div style="font-size:14px;color:var(--text-1);line-height:1.6;padding-bottom:12px;">
+            <strong>PixelForge</strong> is a streamlined automation pipeline designed to process digital images at scale.
+            <br/><br/>
+            It utilizes advanced AI (the <strong>Upscayl Engine</strong>) to intelligently enlarge and enhance images without losing detail or introducing blur. After upscaling, the images are automatically processed by an industrial-grade compression engine (<strong>Caesium CLT</strong>) to rapidly reduce file size while preserving high visual fidelity.
+            <br/><br/>
+            Created by <strong>Refora Technologies</strong>, this application is built for professionals and creators to effortlessly scale low-resolution graphics into high-fidelity, web-ready assets with a single click.
           </div>
         </div>
       </div>

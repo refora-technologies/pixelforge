@@ -123,7 +123,7 @@ function modelDisplayName(id) {
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1120, height: 720,
-    minWidth: 900, minHeight: 600,
+    minWidth: 1080, minHeight: 600,
     frame: false,
     transparent: false,
     backgroundColor: '#080b18',
@@ -618,6 +618,7 @@ ipcMain.handle('get-settings', () => ({
   compressedPath:  store.get('paths.compressed', path.join(app.getPath('documents'),'PixelForge','compressed')),
   savedInputFolder:store.get('app.inputFolder',  ''),
   accentColor:     store.get('app.accentColor',  '#6366f1'),
+  setupDone:       store.get('app.setupDone',    false),
 }));
 
 ipcMain.handle('save-settings', (_, s) => {
@@ -630,7 +631,7 @@ ipcMain.handle('save-settings', (_, s) => {
     'paths.models':    'modelsPath',      'paths.upscaylBin':'upscaylBinPath',
     'paths.caesiumBin':'caesiumBinPath',  'paths.upscaled':  'upscaledPath',
     'paths.compressed':'compressedPath',  'app.inputFolder': 'savedInputFolder',
-    'app.accentColor': 'accentColor',
+    'app.accentColor': 'accentColor',     'app.setupDone':   'setupDone',
   };
   for (const [storeKey, settingKey] of Object.entries(k)) {
     if (s[settingKey] !== undefined) store.set(storeKey, s[settingKey]);

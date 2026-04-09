@@ -104,7 +104,7 @@ async function init() {
   window.pixelforge.onPipelineProgress(onPipelineProgress);
   window.pixelforge.onPipelineDone(onPipelineDone);
 
-  await runSetupCheck();
+  await runSetupCheck(false);
 }
 
 // ─── Dynamic Model Loading ────────────────────────────────────────────────────
@@ -204,12 +204,27 @@ function navigateTo(page) {
 }
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
-async function runSetupCheck() {
-  $('setup-overlay').style.display = 'flex';
-  const result = await window.pixelforge.checkSetup();
+async function runSetupCheck(isManualRecheck = false) {
+  if (!settings.setupDone || isManualRecheck) {
+    $('setup-overlay').style.display = 'flex';
+  }
 
+  const result = await window.pixelforge.checkSetup();
   const upOk = result.upscaylOk && result.modelsOk;
   const csOk = result.caesiumOk;
+
+  if (upOk && csOk) {
+    setBadge('pipeline-status-badge', 'ready', 'Models Ready');
+  } else {
+    setBadge('pipeline-status-badge', 'error', 'Models Missing (Check Settings)');
+  }
+
+  if (settings.setupDone && !isManualRecheck) {
+    hideSetupOverlay();
+    return;
+  }
+
+  $('setup-overlay').style.display = 'flex';
 
   updateDepRow('dep-upscayl', 'dep-upscayl-status', upOk);
   updateDepRow('dep-caesium', 'dep-caesium-status', csOk);
@@ -224,7 +239,7 @@ async function runSetupCheck() {
     $('btn-enter-app').addEventListener('click', hideSetupOverlay);
   } else {
     const missing = [];
-    if (!upOk) missing.push('Upscayl engine + AI models');
+    if (!upOk) missing.push('Upscayl engine binary');
     if (!csOk) missing.push('Caesium CLT');
 
     let detectionNote = '';
@@ -239,7 +254,7 @@ async function runSetupCheck() {
       PixelForge will download and install these tools automatically. They will be stored in the app
       data folder and used exclusively by PixelForge.
       <br/><br/>
-      <span style="color:var(--text-3);font-size:11px;">Estimated download size: ~200 MB (includes AI models)</span>
+      <span style="color:var(--text-3);font-size:11px;">Estimated download size: ~25 MB (AI models are already bundled)</span>
     `;
     $('setup-actions').style.display = 'flex';
     $('setup-all-ok').classList.add('hidden');
@@ -263,16 +278,28 @@ function showSetupOverlay(recheck) {
   $('setup-overlay').style.display = 'flex';
   $('setup-step-check').classList.remove('hidden');
   $('setup-step-download').classList.add('hidden');
-  if (recheck) runSetupCheck();
+  if (recheck) runSetupCheck(true);
 }
 function hideSetupOverlay() {
   $('setup-overlay').style.display = 'none';
+  window.pixelforge.saveSettings({ setupDone: true });
   window.pixelforge.getSettings().then(async s => {
     settings = s;
     await loadModels(s.upscaylModel);
     await loadGpus(s.upscaylGpu);
   });
   window.pixelforge.getAppPaths().then(p => { appPaths = p; updateOutputPathDisplays(); });
+  
+  // Refresh badge status immediately after setup completes
+  window.pixelforge.checkSetup().then(result => {
+    const upOk = result.upscaylOk && result.modelsOk;
+    const csOk = result.caesiumOk;
+    if (upOk && csOk) {
+      setBadge('pipeline-status-badge', 'ready', 'Models Ready');
+    } else {
+      setBadge('pipeline-status-badge', 'error', 'Models Missing (Check Settings)');
+    }
+  });
 }
 
 async function startDownload(checkResult) {
