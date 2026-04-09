@@ -1,0 +1,124 @@
+PIXELFORGE — END USER LICENSE AGREEMENT
+Copyright © 2026 Refora Technologies. All rights reserved.
+=========================================================
+
+PLEASE READ THIS LICENSE AGREEMENT CAREFULLY BEFORE INSTALLING OR USING
+PIXELFORGE. BY CLICKING "I AGREE" OR BY INSTALLING AND USING THE SOFTWARE,
+YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE
+TO BE BOUND BY ITS TERMS.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. LICENSE GRANT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Refora Technologies ("Licensor") grants you a non-exclusive, non-transferable,
+limited license to install and use PixelForge ("Software") on Windows devices
+that you own or control, solely for your personal or internal business purposes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. RESTRICTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You may not:
+  (a) Sell, sublicense, or redistribute the Software as a standalone product;
+  (b) Remove or alter any copyright, trademark, or proprietary notices;
+  (c) Reverse-engineer the proprietary portions of the Software.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. DISCLAIMER OF WARRANTIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. REFORA
+TECHNOLOGIES EXPRESSLY DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. LIMITATION OF LIABILITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IN NO EVENT SHALL REFORA TECHNOLOGIES BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY
+TO USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. THIRD-PARTY SOFTWARE NOTICES AND ATTRIBUTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PixelForge incorporates and/or downloads the following open-source components.
+Their respective licenses are reproduced below.
+
+─────────────────────────────────────────
+5.1  upscayl-ncnn  (AI Upscaling Engine)
+     https://github.com/upscayl/upscayl-ncnn
+─────────────────────────────────────────
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Copyright (c) 2022 Upscayl Contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or any later version.
+
+Full license text: https://github.com/upscayl/upscayl-ncnn/blob/master/LICENSE
+
+─────────────────────────────────────────
+5.2  upscayl-custom-models  (AI Model Files)
+     https://github.com/upscayl/upscayl-custom-models
+─────────────────────────────────────────
+Copyright (c) 2022 Upscayl Contributors
+
+Licensed under the MIT License.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to
+do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED.
+
+Full license text: https://github.com/upscayl/upscayl-custom-models/blob/main/LICENSE
+
+─────────────────────────────────────────
+5.3  caesium-clt  (Image Compression Tool)
+     https://github.com/Lymphatus/caesium-clt
+─────────────────────────────────────────
+Copyright (c) Matteo Paonessa
+
+Licensed under the GNU General Public License v3.0 (GPL-3.0).
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or any later version.
+
+PixelForge downloads caesium-clt separately at runtime from its official
+GitHub releases. The source code for caesium-clt is available at:
+https://github.com/Lymphatus/caesium-clt
+
+Full license text: https://github.com/Lymphatus/caesium-clt/blob/master/LICENSE
+
+─────────────────────────────────────────
+5.4  Electron Framework
+     https://github.com/electron/electron
+─────────────────────────────────────────
+Copyright (c) 2013-2026 GitHub Inc.
+Licensed under the MIT License.
+
+─────────────────────────────────────────
+5.5  electron-store
+     https://github.com/sindresorhus/electron-store
+─────────────────────────────────────────
+Copyright (c) Sindre Sorhus
+Licensed under the MIT License.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. CONTACT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Refora Technologies
+https://reforatech.com
+reforatech@gmail.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+By clicking "I Agree" you accept all terms above.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
