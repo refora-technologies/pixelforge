@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -8,402 +8,245 @@
   <link rel="stylesheet" href="style.css"/>
 </head>
 
-<!-- ─── Inline SVG Definitions (reusable) ─── -->
 <svg style="display:none">
-  <symbol id="ic-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-  </symbol>
-  <symbol id="ic-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="3"/>
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-  </symbol>
-  <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-  </symbol>
-  <symbol id="ic-upscale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
-    <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
-  </symbol>
-  <symbol id="ic-compress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/>
-    <line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/>
-  </symbol>
-  <symbol id="ic-play" viewBox="0 0 24 24" fill="currentColor">
-    <polygon points="5 3 19 12 5 21 5 3"/>
-  </symbol>
-  <symbol id="ic-stop" viewBox="0 0 24 24" fill="currentColor">
-    <rect x="3" y="3" width="18" height="18" rx="2"/>
-  </symbol>
-  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </symbol>
-  <symbol id="ic-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-  </symbol>
-  <symbol id="ic-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-  </symbol>
-  <symbol id="ic-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
-  </symbol>
-  <symbol id="ic-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-    <line x1="5" y1="12" x2="19" y2="12"/>
-  </symbol>
-  <symbol id="ic-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="1"/>
-  </symbol>
-  <symbol id="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-  </symbol>
-  <symbol id="ic-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
-    <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
-    <line x1="7" y1="12" x2="17" y2="12"/>
-  </symbol>
-  <symbol id="ic-dot" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="12" cy="12" r="5"/>
-  </symbol>
-  <symbol id="ic-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="12" y1="16" x2="12" y2="12"></line>
-    <line x1="12" y1="8" x2="12.01" y2="8"></line>
-  </symbol>
+  <symbol id="ic-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="ic-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="ic-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="ic-upscale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+  <symbol id="ic-compress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></symbol>
+  <symbol id="ic-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></symbol>
+  <symbol id="ic-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+  <symbol id="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="ic-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="ic-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="ic-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
+  <symbol id="ic-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/></symbol>
+  <symbol id="ic-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="13" height="13" rx="1"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></symbol>
+  <symbol id="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="ic-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></symbol>
+  <symbol id="ic-dot" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></symbol>
+  <symbol id="ic-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="ic-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+  <symbol id="ic-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-compare" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M5 7l-3 3 3 3"/><path d="M19 7l3 3-3 3"/></symbol>
+  <symbol id="ic-sparkle" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2L12 2z"/></symbol>
+  <symbol id="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+  <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
 </svg>
 
 <body>
 
-<!-- Ambient Glow -->
-<div id="ambient">
-  <div class="ambient-blob blob-1"></div>
-  <div class="ambient-blob blob-2"></div>
-</div>
+<div id="ambient"><div class="ambient-blob blob-1"></div><div class="ambient-blob blob-2"></div></div>
 
-<!-- ═══════════════════════ SETUP OVERLAY ═══════════════════════ -->
+<!-- ═══ SETUP OVERLAY ═══ -->
 <div id="setup-overlay" style="display:none">
   <div class="setup-card">
-
     <div class="setup-head">
-      <div class="setup-wordmark">PixelForge</div>
-      <div class="setup-tagline">by Refora Technologies — First-time setup</div>
+      <img class="setup-logo" src="pixelfroge logo.png" alt=""/>
+      <div>
+        <div class="setup-wordmark">PixelForge</div>
+        <div class="setup-tagline">by Refora Technologies — First-time setup</div>
+      </div>
     </div>
 
-    <!-- Step 1: Check -->
     <div id="setup-step-check">
       <div class="dep-list" id="dep-list">
         <div class="dep-row" id="dep-upscayl">
-          <div class="dep-icon-wrap">
-            <svg width="18" height="18"><use href="#ic-upscale"/></svg>
-          </div>
-          <div class="dep-text">
-            <div class="dep-name">Upscayl Engine (upscayl-bin)</div>
-            <div class="dep-desc">AI upscaling engine binary (~20 MB)</div>
-          </div>
-          <div class="dep-status-icon" id="dep-upscayl-status">
-            <svg width="16" height="16"><use href="#ic-dot"/></svg>
-          </div>
+          <div class="dep-icon-wrap"><svg width="18" height="18"><use href="#ic-upscale"/></svg></div>
+          <div class="dep-text"><div class="dep-name">Upscayl Engine (upscayl-bin)</div><div class="dep-desc">AI upscaling engine binary (~20 MB)</div></div>
+          <div class="dep-status-icon" id="dep-upscayl-status"><svg width="16" height="16"><use href="#ic-dot"/></svg></div>
         </div>
         <div class="dep-row" id="dep-caesium">
-          <div class="dep-icon-wrap">
-            <svg width="18" height="18"><use href="#ic-compress"/></svg>
-          </div>
-          <div class="dep-text">
-            <div class="dep-name">Caesium CLT (caesiumclt)</div>
-            <div class="dep-desc">Image compression CLI tool (~5 MB)</div>
-          </div>
-          <div class="dep-status-icon" id="dep-caesium-status">
-            <svg width="16" height="16"><use href="#ic-dot"/></svg>
-          </div>
+          <div class="dep-icon-wrap"><svg width="18" height="18"><use href="#ic-compress"/></svg></div>
+          <div class="dep-text"><div class="dep-name">Caesium CLT (caesiumclt)</div><div class="dep-desc">Image compression CLI tool (~5 MB)</div></div>
+          <div class="dep-status-icon" id="dep-caesium-status"><svg width="16" height="16"><use href="#ic-dot"/></svg></div>
         </div>
       </div>
 
-      <div class="setup-info" id="setup-info-text">
-        Checking your system for required tools...
-      </div>
+      <div class="setup-info" id="setup-info-text">Checking your system for required tools...</div>
 
       <div class="setup-actions" id="setup-actions" style="display:none">
-        <button class="btn btn-primary btn-lg" id="btn-start-download">
-          <svg width="15" height="15"><use href="#ic-download"/></svg>
-          Download &amp; Install Dependencies
-        </button>
-        <button class="btn btn-ghost" id="btn-skip-setup">
-          Skip — I'll configure paths manually
-        </button>
+        <button class="btn btn-primary btn-lg" id="btn-start-download"><svg width="15" height="15"><use href="#ic-download"/></svg> Download &amp; Install Dependencies</button>
+        <button class="btn btn-ghost" id="btn-skip-setup">Skip — I'll configure paths manually</button>
       </div>
 
       <div id="setup-all-ok" class="hidden">
-        <button class="btn btn-primary btn-lg" id="btn-enter-app" style="width:100%;justify-content:center;">
-          Launch PixelForge
-          <svg width="14" height="14"><use href="#ic-arrow-right"/></svg>
-        </button>
+        <button class="btn btn-primary btn-lg" id="btn-enter-app" style="width:100%">Launch PixelForge <svg width="14" height="14"><use href="#ic-arrow-right"/></svg></button>
       </div>
     </div>
 
-    <!-- Step 2: Downloading -->
     <div id="setup-step-download" class="hidden">
       <div class="dl-section">
         <div class="dl-block" id="dl-caesium-wrap">
-          <div class="dl-label-row">
-            <span class="dl-name">caesiumclt</span>
-            <span class="dl-pct" id="dl-caesium-pct">0%</span>
-          </div>
+          <div class="dl-label-row"><span class="dl-name">caesiumclt</span><span class="dl-pct" id="dl-caesium-pct">0%</span></div>
           <div class="dl-track"><div class="dl-fill" id="dl-caesium-bar"></div></div>
           <span class="dl-status" id="dl-caesium-status">Waiting...</span>
         </div>
         <div class="dl-block" id="dl-upscayl-wrap">
-          <div class="dl-label-row">
-            <span class="dl-name">upscayl-bin + AI models</span>
-            <span class="dl-pct" id="dl-upscayl-pct">0%</span>
-          </div>
+          <div class="dl-label-row"><span class="dl-name">upscayl-bin engine</span><span class="dl-pct" id="dl-upscayl-pct">0%</span></div>
           <div class="dl-track"><div class="dl-fill" id="dl-upscayl-bar"></div></div>
           <span class="dl-status" id="dl-upscayl-status">Waiting...</span>
         </div>
       </div>
-
-      <div id="dl-error-msg" class="hidden">
-        <div class="alert alert-error">
-          <div class="alert-icon"><svg width="14" height="14"><use href="#ic-warn"/></svg></div>
-          <span id="dl-error-text"></span>
-        </div>
-      </div>
-
+      <div id="dl-error-msg" class="hidden"><div class="alert alert-error"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-warn"/></svg></div><span id="dl-error-text"></span></div></div>
       <div id="dl-done-wrap" class="hidden mt-12">
-        <div class="alert alert-success mb-12">
-          <div class="alert-icon"><svg width="14" height="14"><use href="#ic-check"/></svg></div>
-          All dependencies installed successfully.
-        </div>
-        <button class="btn btn-primary btn-lg" id="btn-dl-enter" style="width:100%;justify-content:center;">
-          Launch PixelForge
-          <svg width="14" height="14"><use href="#ic-arrow-right"/></svg>
-        </button>
+        <div class="alert alert-success mb-12"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-check"/></svg></div>All dependencies installed successfully.</div>
+        <button class="btn btn-primary btn-lg" id="btn-dl-enter" style="width:100%">Launch PixelForge <svg width="14" height="14"><use href="#ic-arrow-right"/></svg></button>
       </div>
     </div>
-
   </div>
 </div>
 
-<!-- ═══════════════════════ MAIN APP ═══════════════════════ -->
+<!-- ═══ MAIN APP ═══ -->
 <div id="app">
-
-  <!-- Titlebar -->
   <div id="titlebar">
+    <img class="titlebar-logo" src="pixelfroge logo.png" alt=""/>
     <span class="titlebar-wordmark">PixelForge</span>
     <div class="titlebar-divider"></div>
     <span class="titlebar-brand">Refora Technologies</span>
     <div class="titlebar-spacer"></div>
     <div class="titlebar-controls">
-      <button class="tb-btn" id="btn-minimize" title="Minimize">
-        <svg width="11" height="11"><use href="#ic-minus"/></svg>
-      </button>
-      <button class="tb-btn" id="btn-maximize" title="Maximize">
-        <svg width="11" height="11"><use href="#ic-square"/></svg>
-      </button>
-      <button class="tb-btn tb-close" id="btn-close" title="Close">
-        <svg width="11" height="11"><use href="#ic-x"/></svg>
-      </button>
+      <button class="tb-btn" id="btn-minimize" title="Minimize"><svg width="11" height="11"><use href="#ic-minus"/></svg></button>
+      <button class="tb-btn" id="btn-maximize" title="Maximize"><svg width="11" height="11"><use id="maximize-icon" href="#ic-square"/></svg></button>
+      <button class="tb-btn tb-close" id="btn-close" title="Close"><svg width="11" height="11"><use href="#ic-x"/></svg></button>
     </div>
   </div>
 
-  <!-- Main Layout -->
   <div id="main-layout">
-
-    <!-- Sidebar -->
     <nav id="sidebar">
       <div class="sidebar-app-name">
-        <div class="wordmark">PixelForge</div>
-        <div class="tagline">Image Pipeline</div>
+        <img class="sidebar-logo" src="pixelfroge logo.png" alt=""/>
+        <div><div class="wordmark">PixelForge</div><div class="tagline">Image Pipeline</div></div>
       </div>
-
       <div class="nav-group-label">Navigation</div>
-
-      <div class="nav-item active" data-page="dashboard" id="nav-dashboard">
-        <svg class="nav-icon" width="15" height="15"><use href="#ic-dashboard"/></svg>
-        Dashboard
-      </div>
-      <div class="nav-item" data-page="settings" id="nav-settings">
-        <svg class="nav-icon" width="15" height="15"><use href="#ic-settings"/></svg>
-        Settings
-      </div>
-      <div class="nav-item" data-page="about" id="nav-about">
-        <svg class="nav-icon" width="15" height="15"><use href="#ic-info"/></svg>
-        About
-      </div>
-
+      <div class="nav-item active" data-page="dashboard" id="nav-dashboard"><svg class="nav-icon" width="15" height="15"><use href="#ic-dashboard"/></svg> Dashboard</div>
+      <div class="nav-item" data-page="settings" id="nav-settings"><svg class="nav-icon" width="15" height="15"><use href="#ic-settings"/></svg> Settings</div>
+      <div class="nav-item" data-page="about" id="nav-about"><svg class="nav-icon" width="15" height="15"><use href="#ic-info"/></svg> About</div>
       <div class="sidebar-footer">
         <div class="refora-pill">
           <div class="refora-indicator"></div>
-          <div class="refora-pill-text">
-            <span class="company">Refora Technologies</span>
-            <span class="version">PixelForge v1.0.0</span>
-          </div>
+          <div class="refora-pill-text"><span class="company">Refora Technologies</span><span class="version" id="sidebar-version">PixelForge</span></div>
         </div>
       </div>
     </nav>
 
-    <!-- Content -->
     <main id="content">
+
+      <!-- Update banner -->
+      <div id="update-banner" class="update-banner hidden">
+        <div class="update-banner-icon"><svg width="18" height="18"><use href="#ic-sparkle"/></svg></div>
+        <div class="update-banner-text">
+          <div class="update-banner-title" id="update-banner-title">A new version is available</div>
+          <div class="update-banner-sub" id="update-banner-sub"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="update-banner-btn"><svg width="13" height="13"><use href="#ic-download"/></svg> Update</button>
+        <button class="btn btn-ghost btn-sm" id="update-banner-dismiss">Later</button>
+      </div>
 
       <!-- ═══ DASHBOARD ═══ -->
       <div class="page active" id="page-dashboard">
         <div class="page-header">
-          <div class="page-header-left">
-            <div class="page-title">Dashboard</div>
-            <div class="page-sub">Configure input folder and run the processing pipeline</div>
-          </div>
+          <div class="page-header-left"><div class="page-title">Dashboard</div><div class="page-sub">Select images, choose a mode, and run the pipeline</div></div>
           <span class="status-badge ready" id="pipeline-status-badge">Ready</span>
         </div>
 
-        <!-- Input Folder -->
         <div class="card mb-12">
           <div class="card-header">
             <svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg>
-            <span class="card-header-title">Input Folder</span>
+            <span class="card-header-title">Input &amp; Mode</span>
+            <span class="card-header-spacer"></span>
+            <div class="segmented" id="mode-seg">
+              <button class="seg-btn active" data-mode="both">Upscale + Compress</button>
+              <button class="seg-btn" data-mode="upscale">Upscale only</button>
+              <button class="seg-btn" data-mode="compress">Compress only</button>
+            </div>
           </div>
-          <div class="folder-row">
-            <div class="folder-display" id="input-path-display">No folder selected</div>
-            <button class="btn btn-secondary" id="btn-browse">Browse</button>
-            <button class="btn btn-ghost" id="btn-scan" disabled>
-              <svg width="13" height="13"><use href="#ic-scan"/></svg>
-              Scan
-            </button>
+          <div class="dropzone" id="dropzone">
+            <div class="folder-row" style="padding:8px;">
+              <div class="folder-display" id="input-path-display">No images or folder selected</div>
+              <button class="btn btn-secondary" id="btn-browse"><svg width="13" height="13"><use href="#ic-folder-open"/></svg> Folder</button>
+              <button class="btn btn-secondary" id="btn-browse-files"><svg width="13" height="13"><use href="#ic-image"/></svg> Images</button>
+              <button class="btn btn-ghost" id="btn-scan" disabled><svg width="13" height="13"><use href="#ic-scan"/></svg> Scan</button>
+            </div>
+            <div class="dz-hint">Drag &amp; drop folders or individual images here, or use the buttons</div>
           </div>
-          <label class="remember-row">
-            <input type="checkbox" id="chk-remember-folder"/>
-            <span>Remember this folder for next time</span>
-          </label>
         </div>
 
-        <!-- Scan Results -->
+        <div class="card mb-12 hidden" id="queue-card">
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg><span class="card-header-title">Input Queue</span></div>
+          <div class="queue-list" id="queue-list"></div>
+        </div>
+
         <div class="card mb-12 hidden" id="scan-results-card">
-          <div class="card-header">
-            <svg class="card-header-icon" width="14" height="14"><use href="#ic-scan"/></svg>
-            <span class="card-header-title">Scan Results</span>
-          </div>
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-scan"/></svg><span class="card-header-title">Scan Results</span></div>
           <div class="scan-result">
-            <div>
-              <div class="scan-count" id="scan-count">0</div>
-              <div class="scan-sub">Images Found</div>
-            </div>
-            <div style="flex:1;padding-left:16px;border-left:1px solid var(--border-1);">
+            <div><div class="scan-count" id="scan-count">0</div><div class="scan-sub">Images Found</div></div>
+            <div style="flex:1;padding-left:18px;border-left:1px solid var(--border-1);">
               <div class="scan-detail" id="scan-size-text">—</div>
               <div class="type-pills" id="scan-type-pills"></div>
             </div>
           </div>
         </div>
 
-        <!-- Start Control -->
-        <div class="start-wrap">
-          <button class="btn-start" id="btn-start" disabled>
-            <svg width="14" height="14"><use href="#ic-play"/></svg>
-            Start Pipeline
-          </button>
-          <button class="btn btn-danger btn-sm hidden" id="btn-cancel">
-            <svg width="12" height="12"><use href="#ic-stop"/></svg>
-            Cancel
-          </button>
+        <div class="run-controls">
+          <button class="btn-start" id="btn-start" disabled><svg width="14" height="14"><use href="#ic-play"/></svg> Start Pipeline</button>
+          <button class="btn btn-secondary hidden" id="btn-pause"><svg width="13" height="13"><use href="#ic-pause"/></svg> Pause</button>
+          <button class="btn btn-secondary hidden" id="btn-resume"><svg width="13" height="13"><use href="#ic-play"/></svg> Resume</button>
+          <button class="btn btn-danger hidden" id="btn-cancel"><svg width="12" height="12"><use href="#ic-stop"/></svg> Cancel</button>
         </div>
 
-        <!-- Pipeline Progress -->
         <div class="card mb-12 hidden" id="progress-card">
-          <div class="card-header">
-            <svg class="card-header-icon" width="14" height="14"><use href="#ic-upscale"/></svg>
-            <span class="card-header-title">Pipeline Progress</span>
-          </div>
-
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-upscale"/></svg><span class="card-header-title">Pipeline Progress</span></div>
           <div class="pipeline-stages">
-            <!-- Stage 1 -->
             <div class="stage-block">
-              <div class="stage-header">
-                <div class="stage-title">
-                  <span class="stage-icon-wrap"><svg width="15" height="15"><use href="#ic-upscale"/></svg></span>
-                  AI Upscaling
-                </div>
-                <span class="stage-pill pill-wait" id="badge-upscaling">Waiting</span>
-              </div>
-              <div class="progress-track">
-                <div class="progress-fill" id="bar-upscaling" style="width:0%"></div>
-              </div>
-              <div class="progress-row">
-                <span class="progress-msg" id="msg-upscaling">Waiting to start...</span>
-                <span class="progress-pct" id="pct-upscaling">0%</span>
-              </div>
+              <div class="stage-header"><div class="stage-title"><span class="stage-icon-wrap"><svg width="15" height="15"><use href="#ic-upscale"/></svg></span> AI Upscaling</div><span class="stage-pill pill-wait" id="badge-upscaling">Waiting</span></div>
+              <div class="progress-track"><div class="progress-fill" id="bar-upscaling" style="width:0%"></div></div>
+              <div class="progress-row"><span class="progress-msg" id="msg-upscaling">Waiting to start...</span><span class="progress-pct" id="pct-upscaling">0%</span></div>
             </div>
-
-            <div class="stage-sep">
-              <span class="stage-sep-icon">
-                <svg width="13" height="13"><use href="#ic-arrow-right"/></svg>
-              </span>
-            </div>
-
-            <!-- Stage 2 -->
+            <div class="stage-sep"></div>
             <div class="stage-block">
-              <div class="stage-header">
-                <div class="stage-title">
-                  <span class="stage-icon-wrap"><svg width="15" height="15"><use href="#ic-compress"/></svg></span>
-                  Compression
-                </div>
-                <span class="stage-pill pill-wait" id="badge-compressing">Waiting</span>
-              </div>
-              <div class="progress-track">
-                <div class="progress-fill" id="bar-compressing" style="width:0%"></div>
-              </div>
-              <div class="progress-row">
-                <span class="progress-msg" id="msg-compressing">Waiting for upscaling...</span>
-                <span class="progress-pct" id="pct-compressing">0%</span>
-              </div>
+              <div class="stage-header"><div class="stage-title"><span class="stage-icon-wrap"><svg width="15" height="15"><use href="#ic-compress"/></svg></span> Compression</div><span class="stage-pill pill-wait" id="badge-compressing">Waiting</span></div>
+              <div class="progress-track"><div class="progress-fill" id="bar-compressing" style="width:0%"></div></div>
+              <div class="progress-row"><span class="progress-msg" id="msg-compressing">Waiting for upscaling...</span><span class="progress-pct" id="pct-compressing">0%</span></div>
             </div>
           </div>
-
+          <div class="timing-row" id="timing-row">
+            <div class="timing-item"><span class="timing-val" id="timing-elapsed">0:00</span><span class="timing-lbl">Elapsed</span></div>
+            <div class="timing-item"><span class="timing-val" id="timing-eta">—</span><span class="timing-lbl">ETA</span></div>
+            <div class="timing-item"><span class="timing-val" id="timing-rate">—</span><span class="timing-lbl">Img / min</span></div>
+          </div>
           <div class="log-box" id="pipeline-log"></div>
         </div>
 
-        <!-- Stats -->
         <div class="stats-grid mb-12 hidden" id="stats-row">
-          <div class="stat-card">
-            <div class="stat-val" id="stat-input">0</div>
-            <div class="stat-lbl">Input Images</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" id="stat-upscaled">0</div>
-            <div class="stat-lbl">Upscaled</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" id="stat-compressed">0</div>
-            <div class="stat-lbl">Compressed</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" id="stat-saved">—</div>
-            <div class="stat-lbl">Space Saved</div>
-          </div>
+          <div class="stat-card"><div class="stat-val" id="stat-input">0</div><div class="stat-lbl">Input Images</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-upscaled">0</div><div class="stat-lbl">Upscaled</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-compressed">0</div><div class="stat-lbl">Compressed</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-saved">—</div><div class="stat-lbl">Space Saved</div></div>
         </div>
 
-        <!-- Output Folders -->
+        <div class="card mb-12 hidden" id="results-card">
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-image"/></svg><span class="card-header-title">Results</span><span class="card-header-spacer"></span><span class="set-desc" id="results-hint">Hover a tile to compare, open, or reveal</span></div>
+          <div class="gallery-grid" id="gallery-grid"></div>
+        </div>
+
         <div class="card" id="output-folders-card">
-          <div class="card-header">
-            <svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg>
-            <span class="card-header-title">Output Folders</span>
-          </div>
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg><span class="card-header-title">Output Folders</span></div>
           <div class="output-grid">
             <div class="folder-tile" id="btn-open-upscaled">
-              <div class="folder-tile-icon">
-                <svg width="18" height="18"><use href="#ic-upscale"/></svg>
-              </div>
-              <div class="folder-tile-info">
-                <div class="folder-tile-name">Upscaled Images</div>
-                <div class="folder-tile-path" id="path-upscaled-display">—</div>
-              </div>
+              <div class="folder-tile-icon"><svg width="18" height="18"><use href="#ic-upscale"/></svg></div>
+              <div class="folder-tile-info"><div class="folder-tile-name">Upscaled Images</div><div class="folder-tile-path" id="path-upscaled-display">—</div></div>
               <span class="folder-tile-arrow"><svg width="13" height="13"><use href="#ic-arrow-right"/></svg></span>
             </div>
             <div class="folder-tile" id="btn-open-compressed">
-              <div class="folder-tile-icon">
-                <svg width="18" height="18"><use href="#ic-compress"/></svg>
-              </div>
-              <div class="folder-tile-info">
-                <div class="folder-tile-name">Compressed Images</div>
-                <div class="folder-tile-path" id="path-compressed-display">—</div>
-              </div>
+              <div class="folder-tile-icon"><svg width="18" height="18"><use href="#ic-compress"/></svg></div>
+              <div class="folder-tile-info"><div class="folder-tile-name">Compressed Images</div><div class="folder-tile-path" id="path-compressed-display">—</div></div>
               <span class="folder-tile-arrow"><svg width="13" height="13"><use href="#ic-arrow-right"/></svg></span>
             </div>
           </div>
@@ -413,204 +256,89 @@
       <!-- ═══ SETTINGS ═══ -->
       <div class="page" id="page-settings">
         <div class="page-header">
-          <div class="page-header-left">
-            <div class="page-title">Settings</div>
-            <div class="page-sub">Configure upscaling models, compression quality, and paths</div>
-          </div>
-          <button class="btn btn-primary" id="btn-save-settings">
-            <svg width="13" height="13"><use href="#ic-check"/></svg>
-            Save Settings
-          </button>
+          <div class="page-header-left"><div class="page-title">Settings</div><div class="page-sub">Models, compression, appearance, paths, and updates</div></div>
+          <button class="btn btn-primary" id="btn-save-settings"><svg width="13" height="13"><use href="#ic-check"/></svg> Save Settings</button>
         </div>
 
         <div class="settings-grid">
-          <!-- Left Column -->
           <div>
-            <!-- Upscayl -->
             <div class="card mb-12">
-              <div class="settings-section-title">Upscayl Settings</div>
-
+              <div class="settings-section-title">General</div>
               <div class="set-row">
-                <div>
-                  <div class="set-label">AI Model</div>
-                  <div class="set-desc">Detected from your Upscayl models folder</div>
+                <div><div class="set-label">Theme</div><div class="set-desc">Light or dark appearance</div></div>
+                <div class="segmented" id="theme-seg">
+                  <button class="seg-btn" data-theme="dark"><svg width="13" height="13"><use href="#ic-moon"/></svg> Dark</button>
+                  <button class="seg-btn" data-theme="light"><svg width="13" height="13"><use href="#ic-sun"/></svg> Light</button>
                 </div>
-                <select class="ctrl-select" id="set-upscayl-model">
-                  <option value="upscayl-standard-4x">Loading models...</option>
-                </select>
               </div>
-
               <div class="set-row">
-                <div>
-                  <div class="set-label">Scale Factor</div>
-                  <div class="set-desc">Upscaling magnification</div>
-                </div>
-                <select class="ctrl-select" id="set-upscayl-scale">
-                  <option value="2">2× Faster</option>
-                  <option value="4" selected>4× Maximum Detail</option>
-                </select>
+                <div><div class="set-label">Accent Color</div><div class="set-desc">Primary accent and glow</div></div>
+                <div style="display:flex;align-items:center;gap:8px;"><input type="color" class="ctrl-color" id="set-accent-color" value="#6366f1"/><span style="font-size:11px;color:var(--text-3);font-family:var(--mono);" id="set-accent-preview">#6366f1</span></div>
               </div>
-
               <div class="set-row">
-                <div>
-                  <div class="set-label">Output Format</div>
-                  <div class="set-desc">File format for upscaled images</div>
-                </div>
-                <select class="ctrl-select" id="set-upscayl-format">
-                  <option value="png" selected>PNG — Lossless</option>
-                  <option value="jpg">JPEG</option>
-                  <option value="webp">WebP</option>
-                </select>
+                <div><div class="set-label">Scan Subfolders</div><div class="set-desc">Process nested folders, preserving structure</div></div>
+                <label class="toggle"><input type="checkbox" id="set-recursive"/><span class="toggle-track"></span></label>
               </div>
-
               <div class="set-row">
-                <div>
-                  <div class="set-label">GPU Device</div>
-                  <div class="set-desc">Which GPU to use for AI processing</div>
-                </div>
-                <select class="ctrl-select" id="set-upscayl-gpu" style="min-width:200px">
-                  <option value="auto">Auto-detect (Recommended)</option>
-                </select>
+                <div><div class="set-label">Output Naming</div><div class="set-desc">Tokens: {name} {model} {scale} {index}</div></div>
+                <input class="ctrl-input" id="set-naming" type="text" placeholder="{name}" style="min-width:180px"/>
               </div>
-
               <div class="set-row">
-                <div>
-                  <div class="set-label">Tile Size</div>
-                  <div class="set-desc">For large images — 0 = auto</div>
-                </div>
-                <input class="ctrl-input ctrl-input-sm" id="set-upscayl-tile" type="number" min="0" max="512" step="32" value="0"/>
+                <div><div class="set-label">Notify on Complete</div><div class="set-desc">Desktop notification when a run finishes</div></div>
+                <label class="toggle"><input type="checkbox" id="set-notify"/><span class="toggle-track"></span></label>
               </div>
-
               <div class="set-row">
-                <div>
-                  <div class="set-label">TTA Mode</div>
-                  <div class="set-desc">Better quality, significantly slower</div>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox" id="set-upscayl-tta"/>
-                  <span class="toggle-track"></span>
-                </label>
+                <div><div class="set-label">Sound on Complete</div><div class="set-desc">Play a short chime when done</div></div>
+                <label class="toggle"><input type="checkbox" id="set-sound"/><span class="toggle-track"></span></label>
               </div>
             </div>
 
-            <!-- App -->
+            <div class="card mb-12">
+              <div class="settings-section-title">Upscayl</div>
+              <div class="set-row"><div><div class="set-label">AI Model</div><div class="set-desc">Detected from your models folder</div></div><select class="ctrl-select" id="set-upscayl-model"><option>Loading...</option></select></div>
+              <div class="set-row"><div><div class="set-label">Scale Factor</div><div class="set-desc">Upscaling magnification</div></div><select class="ctrl-select" id="set-upscayl-scale"><option value="2">2× Faster</option><option value="4" selected>4× Maximum Detail</option></select></div>
+              <div class="set-row"><div><div class="set-label">Output Format</div><div class="set-desc">Format for upscaled images</div></div><select class="ctrl-select" id="set-upscayl-format"><option value="png" selected>PNG — Lossless</option><option value="jpg">JPEG</option><option value="webp">WebP</option></select></div>
+              <div class="set-row"><div><div class="set-label">GPU Device</div><div class="set-desc">Which GPU runs AI inference</div></div><select class="ctrl-select" id="set-upscayl-gpu" style="min-width:200px"><option value="auto">Auto-detect (Recommended)</option></select></div>
+              <div class="set-row"><div><div class="set-label">Tile Size</div><div class="set-desc">For large images — 0 = auto</div></div><input class="ctrl-input ctrl-input-sm" id="set-upscayl-tile" type="number" min="0" max="512" step="32" value="0"/></div>
+              <div class="set-row"><div><div class="set-label">TTA Mode</div><div class="set-desc">Better quality, much slower</div></div><label class="toggle"><input type="checkbox" id="set-upscayl-tta"/><span class="toggle-track"></span></label></div>
+            </div>
+
             <div class="card">
-              <div class="settings-section-title">Appearance</div>
-              <div class="set-row">
-                <div>
-                  <div class="set-label">Accent Color</div>
-                  <div class="set-desc">Primary accent and glow color</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <input type="color" class="ctrl-color" id="set-accent-color" value="#6366f1"/>
-                  <span style="font-size:11px;color:var(--text-3);font-family:monospace;" id="set-accent-preview">#6366f1</span>
-                </div>
-              </div>
+              <div class="settings-section-title">Compression</div>
+              <div class="set-row"><div><div class="set-label">Quality</div><div class="set-desc">1 min · 100 original</div></div><div class="slider-group"><input type="range" class="ctrl-range" id="set-caesium-quality" min="1" max="100" value="82"/><span class="range-val" id="set-caesium-quality-val">82</span></div></div>
+              <div class="set-row"><div><div class="set-label">Output Format</div><div class="set-desc">Format after compression</div></div><select class="ctrl-select" id="set-caesium-format"><option value="same">Keep Original</option><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option></select></div>
+              <div class="set-row"><div><div class="set-label">Lossless Mode</div><div class="set-desc">No quality loss — ignores slider</div></div><label class="toggle"><input type="checkbox" id="set-caesium-lossless"/><span class="toggle-track"></span></label></div>
+              <div class="set-row"><div><div class="set-label">Keep Metadata</div><div class="set-desc">Preserve EXIF and IPTC</div></div><label class="toggle"><input type="checkbox" id="set-caesium-meta"/><span class="toggle-track"></span></label></div>
             </div>
           </div>
 
-          <!-- Right Column -->
           <div>
-            <!-- Caesium -->
             <div class="card mb-12">
-              <div class="settings-section-title">Compression Settings</div>
-
-              <div class="set-row">
-                <div>
-                  <div class="set-label">Quality</div>
-                  <div class="set-desc">Compression quality — 1 min, 100 original</div>
+              <div class="settings-section-title">Updates</div>
+              <div class="set-row"><div><div class="set-label">Current Version</div><div class="set-desc" id="upd-current">—</div></div><button class="btn btn-ghost btn-sm" id="btn-check-updates"><svg width="13" height="13"><use href="#ic-refresh"/></svg> Check Now</button></div>
+              <div class="set-row"><div><div class="set-label">Auto-check on Startup</div><div class="set-desc">Look for new releases when the app opens</div></div><label class="toggle"><input type="checkbox" id="set-autoupdate"/><span class="toggle-track"></span></label></div>
+              <div id="upd-status-wrap" class="mt-12 hidden">
+                <div class="alert alert-info" id="upd-status"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-info"/></svg></div><span id="upd-status-text"></span></div>
+                <div id="upd-download-wrap" class="hidden mt-12">
+                  <div class="dl-block"><div class="dl-label-row"><span class="dl-name" id="upd-asset-name">Update</span><span class="dl-pct" id="upd-dl-pct">0%</span></div><div class="dl-track"><div class="dl-fill" id="upd-dl-bar"></div></div></div>
+                  <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button class="btn btn-primary btn-sm" id="btn-download-update"><svg width="13" height="13"><use href="#ic-download"/></svg> Download Update</button>
+                    <button class="btn btn-secondary btn-sm hidden" id="btn-run-installer"><svg width="13" height="13"><use href="#ic-external"/></svg> Run Installer</button>
+                  </div>
                 </div>
-                <div class="slider-group">
-                  <input type="range" class="ctrl-range" id="set-caesium-quality" min="1" max="100" value="82"/>
-                  <span class="range-val" id="set-caesium-quality-val">82</span>
-                </div>
-              </div>
-
-              <div class="set-row">
-                <div>
-                  <div class="set-label">Output Format</div>
-                  <div class="set-desc">Output file format after compression</div>
-                </div>
-                <select class="ctrl-select" id="set-caesium-format">
-                  <option value="same">Keep Original</option>
-                  <option value="jpeg">JPEG</option>
-                  <option value="png">PNG</option>
-                  <option value="webp">WebP</option>
-                </select>
-              </div>
-
-              <div class="set-row">
-                <div>
-                  <div class="set-label">Lossless Mode</div>
-                  <div class="set-desc">No quality loss — ignores quality slider</div>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox" id="set-caesium-lossless"/>
-                  <span class="toggle-track"></span>
-                </label>
-              </div>
-
-              <div class="set-row">
-                <div>
-                  <div class="set-label">Keep Metadata</div>
-                  <div class="set-desc">Preserve EXIF and IPTC metadata</div>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox" id="set-caesium-meta"/>
-                  <span class="toggle-track"></span>
-                </label>
               </div>
             </div>
 
-            <!-- Paths -->
             <div class="card">
-              <div class="settings-section-title">Path Configuration</div>
-
-              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div><div class="set-label">upscayl-bin.exe</div><div class="set-desc">Path to the Upscayl engine binary</div></div>
-                <div class="path-field">
-                  <input class="ctrl-input" id="set-upscayl-bin-path" type="text" placeholder="Auto-detected"/>
-                  <button class="btn btn-ghost btn-sm" id="btn-browse-upscayl-bin">Browse</button>
-                </div>
-              </div>
-
-              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div><div class="set-label">caesiumclt.exe</div><div class="set-desc">Path to the Caesium CLI binary</div></div>
-                <div class="path-field">
-                  <input class="ctrl-input" id="set-caesium-bin-path" type="text" placeholder="Auto-detected"/>
-                  <button class="btn btn-ghost btn-sm" id="btn-browse-caesium-bin">Browse</button>
-                </div>
-              </div>
-
-              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div><div class="set-label">AI Models Folder</div><div class="set-desc">.bin and .param model files</div></div>
-                <div class="path-field">
-                  <input class="ctrl-input" id="set-models-path" type="text" placeholder="Auto-detected"/>
-                  <button class="btn btn-ghost btn-sm" id="btn-browse-models">Browse</button>
-                </div>
-              </div>
-
-              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div><div class="set-label">Upscaled Output</div><div class="set-desc">Where upscaled images are saved</div></div>
-                <div class="path-field">
-                  <input class="ctrl-input" id="set-upscaled-path" type="text"/>
-                  <button class="btn btn-ghost btn-sm" id="btn-browse-upscaled">Browse</button>
-                </div>
-              </div>
-
-              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-                <div><div class="set-label">Compressed Output</div><div class="set-desc">Where compressed images are saved</div></div>
-                <div class="path-field">
-                  <input class="ctrl-input" id="set-compressed-path" type="text"/>
-                  <button class="btn btn-ghost btn-sm" id="btn-browse-compressed">Browse</button>
-                </div>
-              </div>
-
-              <div class="mt-12">
-                <button class="btn btn-ghost btn-sm" id="btn-rerun-setup">
-                  <svg width="12" height="12"><use href="#ic-download"/></svg>
-                  Re-run Dependency Setup
-                </button>
+              <div class="settings-section-title">Paths</div>
+              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">upscayl-bin.exe</div><div class="set-desc">Upscayl engine binary</div></div><div class="path-field"><input class="ctrl-input" id="set-upscayl-bin-path" type="text" placeholder="Auto-detected"/><button class="btn btn-ghost btn-sm" id="btn-browse-upscayl-bin">Browse</button></div></div>
+              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">caesiumclt.exe</div><div class="set-desc">Caesium CLI binary</div></div><div class="path-field"><input class="ctrl-input" id="set-caesium-bin-path" type="text" placeholder="Auto-detected"/><button class="btn btn-ghost btn-sm" id="btn-browse-caesium-bin">Browse</button></div></div>
+              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">AI Models Folder</div><div class="set-desc">.bin and .param files (overrides bundled)</div></div><div class="path-field"><input class="ctrl-input" id="set-models-path" type="text" placeholder="Auto-detected"/><button class="btn btn-ghost btn-sm" id="btn-browse-models">Browse</button></div></div>
+              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">Upscaled Output</div><div class="set-desc">Where upscaled images are saved</div></div><div class="path-field"><input class="ctrl-input" id="set-upscaled-path" type="text"/><button class="btn btn-ghost btn-sm" id="btn-browse-upscaled">Browse</button></div></div>
+              <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">Compressed Output</div><div class="set-desc">Where compressed images are saved</div></div><div class="path-field"><input class="ctrl-input" id="set-compressed-path" type="text"/><button class="btn btn-ghost btn-sm" id="btn-browse-compressed">Browse</button></div></div>
+              <div class="mt-12" style="display:flex;gap:8px;">
+                <button class="btn btn-ghost btn-sm" id="btn-rerun-setup"><svg width="12" height="12"><use href="#ic-download"/></svg> Re-run Setup</button>
+                <button class="btn btn-ghost btn-sm" id="btn-open-logs"><svg width="12" height="12"><use href="#ic-folder-open"/></svg> Open Logs</button>
               </div>
             </div>
           </div>
@@ -619,29 +347,51 @@
 
       <!-- ═══ ABOUT ═══ -->
       <div class="page" id="page-about">
-        <div class="page-header">
-          <div class="page-header-left">
-            <div class="page-title">About PixelForge</div>
-            <div class="page-sub">Application details and information</div>
-          </div>
-        </div>
+        <div class="page-header"><div class="page-header-left"><div class="page-title">About PixelForge</div><div class="page-sub">Application details and open-source attribution</div></div></div>
 
         <div class="card mb-12">
-          <div class="card-header">
-            <svg class="card-header-icon" width="14" height="14"><use href="#ic-info"/></svg>
-            <span class="card-header-title">About This App</span>
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-info"/></svg><span class="card-header-title">About</span></div>
+          <div class="about-text">
+            <strong>PixelForge</strong> automates a two-stage image pipeline: AI upscaling with the <strong>Upscayl</strong> engine, followed by smart compression with <strong>Caesium CLT</strong>. Everything runs locally — no cloud, no accounts.
           </div>
-          <div style="font-size:14px;color:var(--text-1);line-height:1.6;padding-bottom:12px;">
-            <strong>PixelForge</strong> is a streamlined automation pipeline designed to process digital images at scale.
-            <br/><br/>
-            It utilizes advanced AI (the <strong>Upscayl Engine</strong>) to intelligently enlarge and enhance images without losing detail or introducing blur. After upscaling, the images are automatically processed by an industrial-grade compression engine (<strong>Caesium CLT</strong>) to rapidly reduce file size while preserving high visual fidelity.
-            <br/><br/>
-            Created by <strong>Refora Technologies</strong>, this application is built for professionals and creators to effortlessly scale low-resolution graphics into high-fidelity, web-ready assets with a single click.
+          <div class="about-meta">
+            <div class="about-meta-item"><div class="v" id="about-version">—</div><div class="l">Version</div></div>
+            <div class="about-meta-item"><div class="v" id="about-update-state">Checking…</div><div class="l">Updates</div></div>
           </div>
+          <div class="mt-12"><button class="btn btn-ghost btn-sm" id="btn-about-check"><svg width="13" height="13"><use href="#ic-refresh"/></svg> Check for Updates</button></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-compress"/></svg><span class="card-header-title">Open-Source Stack</span></div>
+          <table class="stack-table">
+            <tr><td>upscayl-ncnn</td><td>AI upscaling engine (Vulkan/NCNN)</td><td>AGPL-3.0</td></tr>
+            <tr><td>upscayl-custom-models</td><td>Trained AI model weights</td><td>MIT</td></tr>
+            <tr><td>caesium-clt</td><td>Image compression CLI</td><td>GPL-3.0</td></tr>
+            <tr><td>Electron</td><td>Desktop application framework</td><td>MIT</td></tr>
+          </table>
         </div>
       </div>
 
     </main>
+  </div>
+</div>
+
+<!-- Compare modal -->
+<div id="compare-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title" id="compare-title">Before / After</div>
+      <button class="modal-close" id="compare-close"><svg width="15" height="15"><use href="#ic-x"/></svg></button>
+    </div>
+    <div class="cmp" id="cmp">
+      <span class="cmp-tag before">Original</span>
+      <span class="cmp-tag after">Upscaled</span>
+      <img id="cmp-before-img" src="" alt=""/>
+      <div class="cmp-after" id="cmp-after"><img id="cmp-after-img" src="" alt=""/></div>
+      <div class="cmp-divider" id="cmp-divider"></div>
+      <div class="cmp-handle" id="cmp-handle"><svg width="16" height="16"><use href="#ic-compare"/></svg></div>
+      <input type="range" class="cmp-range" id="cmp-range" min="0" max="100" value="50"/>
+    </div>
   </div>
 </div>
 

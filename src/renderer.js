@@ -1,22 +1,43 @@
 'use strict';
 
-// ─── State ────────────────────────────────────────────────────────────────────
-let currentPage = 'dashboard';
-let inputFolder = '';
+let queue = [];
+let pathCounts = {};
 let scannedImages = [];
+const IMG_EXT_RE = /\.(jpg|jpeg|png|webp|bmp|tiff|tif)$/i;
+const isImagePath = (p) => IMG_EXT_RE.test(p);
 let pipelineRunning = false;
+let pipelineMode = 'both';
 let settings = {};
 let appPaths = {};
+let lastResults = [];
+let lastUpdate = null;
+let pipelineStart = 0;
+let elapsedTimer = null;
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
-function $(id) { return document.getElementById(id); }
-function numFmt(n) { return Number(n).toLocaleString(); }
+const $ = (id) => document.getElementById(id);
+const numFmt = (n) => Number(n).toLocaleString();
+
 function byteFmt(b) {
   if (!b || b === 0) return '0 B';
   const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(b) / Math.log(k));
   return (b / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
 }
+
+function fileUrl(p) {
+  return 'file:///' + encodeURI(String(p).replace(/\\/g, '/'));
+}
+
+function fmtDuration(ms) {
+  if (!ms || ms < 0) return '0:00';
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 function log(text, cls = '') {
   const box = $('pipeline-log');
   if (!box) return;
@@ -29,251 +50,163 @@ function log(text, cls = '') {
   box.scrollTop = box.scrollHeight;
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
+// ─── Init ───────────────────────────────────────────────────────────────────
 async function init() {
   settings = await window.pixelforge.getSettings();
   appPaths = await window.pixelforge.getAppPaths();
 
+  applyTheme(settings.theme || 'dark');
   applyAccentColor(settings.accentColor || '#6366f1');
+  pipelineMode = settings.pipelineMode || 'both';
   updateOutputPathDisplays();
 
-  if (settings.savedInputFolder) {
-    setInputFolder(settings.savedInputFolder);
-    $('chk-remember-folder').checked = true;
-  }
+  const version = await window.pixelforge.getAppVersion();
+  $('sidebar-version').textContent = `PixelForge v${version}`;
+  $('about-version').textContent = `v${version}`;
+  $('upd-current').textContent = `v${version}`;
 
-  // Load models and GPUs before populating settings
+  if (Array.isArray(settings.savedInputQueue) && settings.savedInputQueue.length) addPaths(settings.savedInputQueue, true);
+
   await loadModels(settings.upscaylModel);
   await loadGpus(settings.upscaylGpu);
   populateSettingsForm();
+  setMode(pipelineMode);
 
-  // Titlebar controls
-  $('btn-minimize').addEventListener('click', () => window.pixelforge.minimize());
-  $('btn-maximize').addEventListener('click', () => window.pixelforge.maximize());
-  $('btn-close').addEventListener('click', () => window.pixelforge.close());
+  wireTitlebar();
+  wireNav();
+  wireDashboard();
+  wireSettings();
+  wireUpdates();
+  wireCompareModal();
 
-  // Navigation
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.addEventListener('click', () => navigateTo(item.dataset.page));
-  });
-
-  // Dashboard
-  $('btn-browse').addEventListener('click', onBrowse);
-  $('btn-scan').addEventListener('click', onScan);
-  $('btn-start').addEventListener('click', onStartPipeline);
-  $('btn-cancel').addEventListener('click', onCancelPipeline);
-  $('btn-open-upscaled').addEventListener('click', () => window.pixelforge.openFolder(appPaths.upscaled));
-  $('btn-open-compressed').addEventListener('click', () => window.pixelforge.openFolder(appPaths.compressed));
-
-  // Settings
-  $('btn-save-settings').addEventListener('click', onSaveSettings);
-  $('set-caesium-quality').addEventListener('input', () => {
-    $('set-caesium-quality-val').textContent = $('set-caesium-quality').value;
-  });
-  $('set-accent-color').addEventListener('input', () => {
-    const val = $('set-accent-color').value;
-    $('set-accent-preview').textContent = val;
-    applyAccentColor(val);
-  });
-
-  // Path browse
-  $('btn-browse-upscayl-bin').addEventListener('click', async () => {
-    const f = await window.pixelforge.selectFile([{ name: 'Executable', extensions: ['exe'] }]);
-    if (f) $('set-upscayl-bin-path').value = f;
-  });
-  $('btn-browse-caesium-bin').addEventListener('click', async () => {
-    const f = await window.pixelforge.selectFile([{ name: 'Executable', extensions: ['exe'] }]);
-    if (f) $('set-caesium-bin-path').value = f;
-  });
-  $('btn-browse-models').addEventListener('click', async () => {
-    const f = await window.pixelforge.selectFolder();
-    if (f) $('set-models-path').value = f;
-  });
-  $('btn-browse-upscaled').addEventListener('click', async () => {
-    const f = await window.pixelforge.selectFolder();
-    if (f) $('set-upscaled-path').value = f;
-  });
-  $('btn-browse-compressed').addEventListener('click', async () => {
-    const f = await window.pixelforge.selectFolder();
-    if (f) $('set-compressed-path').value = f;
-  });
-
-  $('btn-rerun-setup').addEventListener('click', () => showSetupOverlay(true));
-
-  // Pipeline listeners
   window.pixelforge.onPipelineProgress(onPipelineProgress);
   window.pixelforge.onPipelineDone(onPipelineDone);
+  window.pixelforge.onUpdateAvailable(onUpdateAvailable);
+  window.pixelforge.onMaximizedChanged(setMaximizeIcon);
 
   await runSetupCheck(false);
 }
 
-// ─── Dynamic Model Loading ────────────────────────────────────────────────────
+// ─── Titlebar / nav ─────────────────────────────────────────────────────────
+function wireTitlebar() {
+  $('btn-minimize').addEventListener('click', () => window.pixelforge.minimize());
+  $('btn-maximize').addEventListener('click', () => window.pixelforge.maximize());
+  $('btn-close').addEventListener('click', () => window.pixelforge.close());
+  window.pixelforge.isMaximized().then(setMaximizeIcon);
+}
+function setMaximizeIcon(isMax) {
+  const use = $('maximize-icon');
+  if (use) use.setAttribute('href', isMax ? '#ic-restore' : '#ic-square');
+}
+function wireNav() {
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => navigateTo(item.dataset.page));
+  });
+}
+function navigateTo(page) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
+  $(`page-${page}`)?.classList.add('active');
+}
+
+// ─── Theme / accent ─────────────────────────────────────────────────────────
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+}
+function applyAccentColor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const root = document.documentElement.style;
+  root.setProperty('--accent', hex);
+  root.setProperty('--accent-hover', shadeHex(hex, -20));
+  root.setProperty('--accent-muted', `rgba(${r},${g},${b},0.12)`);
+  root.setProperty('--accent-glow', `rgba(${r},${g},${b},0.18)`);
+  root.setProperty('--border-accent', `rgba(${r},${g},${b},0.4)`);
+}
+function shadeHex(hex, amt) {
+  const c = [1, 3, 5].map(i => Math.min(255, Math.max(0, parseInt(hex.slice(i, i + 2), 16) + amt)));
+  return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// ─── Models / GPUs ──────────────────────────────────────────────────────────
 async function loadModels(currentModel) {
   const sel = $('set-upscayl-model');
   if (!sel) return;
   try {
     const models = await window.pixelforge.listModels();
     sel.innerHTML = '';
-    if (models.length === 0) {
-      // Fallback list if models folder is empty/not found yet
-      const fallbacks = [
-        { id: 'upscayl-standard-4x',      name: 'Upscayl Standard 4x (Recommended)' },
-        { id: 'upscayl-standard-lite-4x', name: 'Upscayl Standard Lite 4x' },
-        { id: 'upscayl-ultra-fast-4x',    name: 'Upscayl Ultra Fast 4x' },
-        { id: 'realesrgan-x4plus',        name: 'Real-ESRGAN 4x (General)' },
-        { id: 'realesrgan-x4plus-anime',  name: 'Real-ESRGAN Anime 4x' },
-        { id: 'ultrasharp',               name: 'Ultrasharp' },
-        { id: 'remacri',                  name: 'Remacri' },
-      ];
-      for (const m of fallbacks) {
-        const opt = document.createElement('option');
-        opt.value = m.id; opt.textContent = m.name;
-        sel.appendChild(opt);
-      }
-    } else {
-      for (const m of models) {
-        const opt = document.createElement('option');
-        opt.value = m.id; opt.textContent = m.name;
-        sel.appendChild(opt);
-      }
+    const list = models.length ? models : [{ id: 'upscayl-standard-4x', name: 'Upscayl Standard 4x (Recommended)' }];
+    for (const m of list) {
+      const opt = document.createElement('option');
+      opt.value = m.id; opt.textContent = m.name;
+      sel.appendChild(opt);
     }
-    // Set currently saved model
     if (currentModel) sel.value = currentModel;
-    if (!sel.value && sel.options.length > 0) sel.selectedIndex = 0;
-  } catch (e) {
-    console.error('loadModels error:', e);
-  }
+    if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+  } catch (e) { console.error('loadModels', e); }
 }
-
-// ─── Dynamic GPU Loading ───────────────────────────────────────────────────────
 async function loadGpus(currentGpu) {
   const sel = $('set-upscayl-gpu');
   if (!sel) return;
   try {
     const gpus = await window.pixelforge.listGpus();
-    // Keep the 'auto' option, then append real GPUs
     sel.innerHTML = '<option value="auto">Auto-detect (Recommended)</option>';
-    let dedicatedIdx = null;
+    let dedicated = null;
     for (const g of gpus) {
       const opt = document.createElement('option');
       opt.value = g.id;
       opt.textContent = `GPU ${g.id}: ${g.name}${g.vramLabel ? ' (' + g.vramLabel + ')' : ''}${g.isIntegrated ? ' — Integrated' : ' — Dedicated'}`;
       sel.appendChild(opt);
-      // Track the first dedicated GPU
-      if (!g.isIntegrated && dedicatedIdx === null) dedicatedIdx = g.id;
+      if (!g.isIntegrated && dedicated === null) dedicated = g.id;
     }
-    // Set saved value or default to dedicated GPU
-    if (currentGpu && currentGpu !== 'auto') {
-      sel.value = currentGpu;
-    } else if (dedicatedIdx !== null && (!currentGpu || currentGpu === 'auto')) {
-      sel.value = dedicatedIdx;
-      // Auto-save dedicated GPU as default
-      await window.pixelforge.saveSettings({ upscaylGpu: dedicatedIdx });
-    }
-  } catch (e) {
-    console.error('loadGpus error:', e);
-  }
+    if (currentGpu && currentGpu !== 'auto') sel.value = currentGpu;
+    else if (dedicated !== null) { sel.value = dedicated; await window.pixelforge.saveSettings({ upscaylGpu: dedicated }); }
+  } catch (e) { console.error('loadGpus', e); }
 }
 
-function applyAccentColor(hex) {
-  const r = parseInt(hex.slice(1,3),16);
-  const g = parseInt(hex.slice(3,5),16);
-  const b = parseInt(hex.slice(5,7),16);
-  document.documentElement.style.setProperty('--accent', hex);
-  document.documentElement.style.setProperty('--accent-hover', shadeHex(hex, -20));
-  document.documentElement.style.setProperty('--accent-muted', `rgba(${r},${g},${b},0.12)`);
-  document.documentElement.style.setProperty('--accent-glow', `rgba(${r},${g},${b},0.18)`);
-  document.documentElement.style.setProperty('--border-accent', `rgba(${r},${g},${b},0.4)`);
-}
-function shadeHex(hex, amt) {
-  let r = Math.min(255, Math.max(0, parseInt(hex.slice(1,3),16) + amt));
-  let g = Math.min(255, Math.max(0, parseInt(hex.slice(3,5),16) + amt));
-  let b = Math.min(255, Math.max(0, parseInt(hex.slice(5,7),16) + amt));
-  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
-}
-
-// ─── Navigation ────────────────────────────────────────────────────────────────
-function navigateTo(page) {
-  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  const navEl = document.querySelector(`.nav-item[data-page="${page}"]`);
-  const pageEl = $(`page-${page}`);
-  if (navEl) navEl.classList.add('active');
-  if (pageEl) pageEl.classList.add('active');
-  currentPage = page;
-}
-
-// ─── Setup ────────────────────────────────────────────────────────────────────
+// ─── Setup overlay ──────────────────────────────────────────────────────────
 async function runSetupCheck(isManualRecheck = false) {
-  if (!settings.setupDone || isManualRecheck) {
-    $('setup-overlay').style.display = 'flex';
-  }
+  if (!settings.setupDone || isManualRecheck) $('setup-overlay').style.display = 'flex';
 
   const result = await window.pixelforge.checkSetup();
   const upOk = result.upscaylOk && result.modelsOk;
   const csOk = result.caesiumOk;
+  setBadge('pipeline-status-badge', (upOk && csOk) ? 'ready' : 'error', (upOk && csOk) ? 'Ready' : 'Setup Needed');
 
-  if (upOk && csOk) {
-    setBadge('pipeline-status-badge', 'ready', 'Models Ready');
-  } else {
-    setBadge('pipeline-status-badge', 'error', 'Models Missing (Check Settings)');
-  }
-
-  if (settings.setupDone && !isManualRecheck) {
-    hideSetupOverlay();
-    return;
-  }
-
+  if (settings.setupDone && !isManualRecheck) { hideSetupOverlay(); return; }
   $('setup-overlay').style.display = 'flex';
+  $('setup-step-check').classList.remove('hidden');
+  $('setup-step-download').classList.add('hidden');
 
   updateDepRow('dep-upscayl', 'dep-upscayl-status', upOk);
   updateDepRow('dep-caesium', 'dep-caesium-status', csOk);
 
   if (upOk && csOk) {
-    let msg = 'All dependencies found. Ready to launch.';
-    if (result.upscaylDetected) msg = 'Upscayl installation auto-detected. All dependencies ready.';
-    $('setup-info-text').textContent = msg;
-    $('setup-info-text').className = 'setup-info';
+    $('setup-info-text').textContent = result.upscaylDetected
+      ? 'Upscayl installation auto-detected. All dependencies ready.'
+      : 'All dependencies found. Ready to launch.';
     $('setup-actions').style.display = 'none';
     $('setup-all-ok').classList.remove('hidden');
-    $('btn-enter-app').addEventListener('click', hideSetupOverlay);
+    $('btn-enter-app').onclick = hideSetupOverlay;
   } else {
     const missing = [];
     if (!upOk) missing.push('Upscayl engine binary');
     if (!csOk) missing.push('Caesium CLT');
-
-    let detectionNote = '';
-    if (result.upscaylDetected && !result.modelsOk) {
-      detectionNote = `<br/><br/><span style="color:var(--green);font-size:11px;">Upscayl binary detected — only models are missing from its models folder.</span>`;
-    }
-
-    $('setup-info-text').innerHTML = `
-      <strong>Missing dependencies detected:</strong><br/>
-      ${missing.map(m => `&bull; ${m}`).join('<br/>')}${detectionNote}
-      <br/><br/>
-      PixelForge will download and install these tools automatically. They will be stored in the app
-      data folder and used exclusively by PixelForge.
-      <br/><br/>
-      <span style="color:var(--text-3);font-size:11px;">Estimated download size: ~25 MB (AI models are already bundled)</span>
-    `;
+    $('setup-info-text').innerHTML =
+      `<strong>Missing dependencies:</strong><br/>${missing.map(m => '&bull; ' + m).join('<br/>')}` +
+      `<br/><br/>PixelForge will download and install these automatically into its app-data folder.` +
+      `<br/><br/><span style="color:var(--text-3);font-size:11px;">Estimated download: ~25 MB (AI models are bundled)</span>`;
     $('setup-actions').style.display = 'flex';
     $('setup-all-ok').classList.add('hidden');
     $('btn-start-download').onclick = () => startDownload(result);
     $('btn-skip-setup').onclick = hideSetupOverlay;
   }
 }
-
-function updateDepRow(rowId, statusId, isOk) {
-  const row = $(rowId);
-  row.className = 'dep-row ' + (isOk ? 'dep-ok' : 'dep-missing');
-  const statusEl = $(statusId);
-  if (isOk) {
-    statusEl.innerHTML = '<svg width="16" height="16"><use href="#ic-check"/></svg>';
-  } else {
-    statusEl.innerHTML = '<svg width="16" height="16"><use href="#ic-warn"/></svg>';
-  }
+function updateDepRow(rowId, statusId, ok) {
+  $(rowId).className = 'dep-row ' + (ok ? 'dep-ok' : 'dep-missing');
+  $(statusId).innerHTML = `<svg width="16" height="16"><use href="#${ok ? 'ic-check' : 'ic-warn'}"/></svg>`;
 }
-
 function showSetupOverlay(recheck) {
   $('setup-overlay').style.display = 'flex';
   $('setup-step-check').classList.remove('hidden');
@@ -289,19 +222,11 @@ function hideSetupOverlay() {
     await loadGpus(s.upscaylGpu);
   });
   window.pixelforge.getAppPaths().then(p => { appPaths = p; updateOutputPathDisplays(); });
-  
-  // Refresh badge status immediately after setup completes
-  window.pixelforge.checkSetup().then(result => {
-    const upOk = result.upscaylOk && result.modelsOk;
-    const csOk = result.caesiumOk;
-    if (upOk && csOk) {
-      setBadge('pipeline-status-badge', 'ready', 'Models Ready');
-    } else {
-      setBadge('pipeline-status-badge', 'error', 'Models Missing (Check Settings)');
-    }
+  window.pixelforge.checkSetup().then(r => {
+    const ok = r.upscaylOk && r.modelsOk && r.caesiumOk;
+    setBadge('pipeline-status-badge', ok ? 'ready' : 'error', ok ? 'Ready' : 'Setup Needed');
   });
 }
-
 async function startDownload(checkResult) {
   $('setup-step-check').classList.add('hidden');
   $('setup-step-download').classList.remove('hidden');
@@ -312,7 +237,6 @@ async function startDownload(checkResult) {
     downloadUpscayl: !(checkResult.upscaylOk && checkResult.modelsOk),
     downloadCaesium: !checkResult.caesiumOk,
   };
-
   if (!down.downloadCaesium) $('dl-caesium-wrap').classList.add('hidden');
   if (!down.downloadUpscayl) $('dl-upscayl-wrap').classList.add('hidden');
 
@@ -324,16 +248,14 @@ async function startDownload(checkResult) {
       $('dl-caesium-status').textContent = data.message || '';
       $('dl-caesium-status').className = 'dl-status' + (data.status === 'done' ? ' ok' : '');
       if (data.status === 'done') $('dl-caesium-bar').classList.add('done');
-    } else if (data.stage === 'upscayl' || data.stage === 'models') {
-      // Both binary and per-model progress use the upscayl bar
+    } else if (data.stage === 'upscayl') {
       $('dl-upscayl-bar').style.width = (data.percent || 0) + '%';
       $('dl-upscayl-pct').textContent = (data.percent || 0) + '%';
       $('dl-upscayl-status').textContent = data.message || '';
-      $('dl-upscayl-status').className = 'dl-status' + (data.status === 'done' && data.percent >= 100 ? ' ok' : '');
-      if (data.status === 'done' && data.percent >= 100) $('dl-upscayl-bar').classList.add('done');
+      if (data.status === 'done') { $('dl-upscayl-status').className = 'dl-status ok'; $('dl-upscayl-bar').classList.add('done'); }
     } else if (data.stage === 'complete') {
       $('dl-done-wrap').classList.remove('hidden');
-      $('btn-dl-enter').addEventListener('click', hideSetupOverlay);
+      $('btn-dl-enter').onclick = hideSetupOverlay;
     } else if (data.stage === 'error') {
       $('dl-error-msg').classList.remove('hidden');
       $('dl-error-text').textContent = 'Download failed: ' + data.message;
@@ -341,264 +263,412 @@ async function startDownload(checkResult) {
   });
 
   const result = await window.pixelforge.downloadDeps(down);
-  if (!result.success && !result.cancelled) {
+  if (!result.success) {
     $('dl-error-msg').classList.remove('hidden');
     $('dl-error-text').textContent = 'Download failed: ' + (result.error || 'Unknown error');
   }
 }
 
-// ─── Dashboard: Browse & Scan ─────────────────────────────────────────────────
-async function onBrowse() {
-  const folder = await window.pixelforge.selectFolder();
-  if (folder) {
-    setInputFolder(folder);
-    await onScan();
-  }
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+function wireDashboard() {
+  $('btn-browse').addEventListener('click', onBrowse);
+  $('btn-browse-files').addEventListener('click', onAddImages);
+  $('btn-scan').addEventListener('click', scanAll);
+  $('btn-start').addEventListener('click', onStartPipeline);
+  $('btn-pause').addEventListener('click', onPause);
+  $('btn-resume').addEventListener('click', onResume);
+  $('btn-cancel').addEventListener('click', onCancel);
+  $('btn-open-upscaled').addEventListener('click', () => window.pixelforge.openFolder(appPaths.upscaled));
+  $('btn-open-compressed').addEventListener('click', () => window.pixelforge.openFolder(appPaths.compressed));
+
+  document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => {
+    setMode(b.dataset.mode);
+    window.pixelforge.saveSettings({ pipelineMode: pipelineMode });
+  }));
+
+  const dz = $('dropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', onDrop);
 }
 
-function setInputFolder(folder) {
-  inputFolder = folder;
+function setMode(mode) {
+  pipelineMode = mode;
+  document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+}
+
+async function onBrowse() {
+  const folders = await window.pixelforge.selectFolders();
+  if (folders && folders.length) addPaths(folders, true);
+}
+async function onAddImages() {
+  const files = await window.pixelforge.selectImages();
+  if (files && files.length) addPaths(files, true);
+}
+function onDrop(e) {
+  e.preventDefault();
+  $('dropzone').classList.remove('dragover');
+  const items = e.dataTransfer.items;
+  const dropped = [];
+  for (let i = 0; i < e.dataTransfer.files.length; i++) {
+    const p = e.dataTransfer.files[i].path;
+    if (!p) continue;
+    const entry = items[i] && items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+    if (entry && entry.isDirectory) dropped.push(p);
+    else if (isImagePath(p)) dropped.push(p);
+  }
+  addPaths(dropped, true);
+}
+
+function persistQueue() {
+  window.pixelforge.saveSettings({ savedInputQueue: queue.slice() });
+}
+function addPaths(items, doScan = true) {
+  for (const p of items) if (p && !queue.includes(p)) queue.push(p);
+  renderQueue();
+  updateInputDisplay();
+  persistQueue();
+  if (doScan) scanAll();
+}
+function removePath(target) {
+  queue = queue.filter(p => p !== target);
+  renderQueue();
+  updateInputDisplay();
+  persistQueue();
+  scanAll();
+}
+function updateInputDisplay() {
   const el = $('input-path-display');
-  el.textContent = folder;
+  if (!queue.length) { el.textContent = 'No images or folder selected'; el.classList.remove('filled'); $('btn-scan').disabled = true; return; }
   el.classList.add('filled');
+  el.textContent = queue.length === 1 ? queue[0] : `${queue.length} items selected`;
   $('btn-scan').disabled = false;
 }
-
-async function onScan() {
-  if (!inputFolder) return;
-  const btnScan = $('btn-scan');
-  btnScan.disabled = true;
-  btnScan.textContent = 'Scanning...';
-
-  const result = await window.pixelforge.scanImages(inputFolder);
-  scannedImages = result.images || [];
-
-  btnScan.textContent = 'Scan';
-  btnScan.disabled = false;
-
-  if (scannedImages.length === 0) {
-    $('scan-results-card').classList.add('hidden');
-    $('btn-start').disabled = true;
-    $('stats-row').classList.add('hidden');
-    return;
-  }
-
-  $('scan-count').textContent = numFmt(scannedImages.length);
-  const totalSize = scannedImages.reduce((a, img) => a + img.size, 0);
-  $('scan-size-text').textContent = `Total size: ${byteFmt(totalSize)}`;
-
-  const types = {};
-  scannedImages.forEach(img => {
-    const ext = (img.ext || '.???').replace('.','').toUpperCase();
-    types[ext] = (types[ext] || 0) + 1;
-  });
-  $('scan-type-pills').innerHTML = Object.entries(types)
-    .map(([ext, n]) => `<span class="type-pill">${ext} (${n})</span>`).join('');
-
-  $('scan-results-card').classList.remove('hidden');
-  $('btn-start').disabled = false;
-  updateStats(scannedImages.length, 0, 0, null);
-  $('stats-row').classList.remove('hidden');
-
-  if ($('chk-remember-folder').checked) {
-    await window.pixelforge.saveSettings({ savedInputFolder: inputFolder });
+function renderQueue() {
+  const card = $('queue-card'), list = $('queue-list');
+  if (queue.length <= 1) { card.classList.add('hidden'); list.innerHTML = ''; return; }
+  card.classList.remove('hidden');
+  list.innerHTML = '';
+  for (const p of queue) {
+    const isFile = isImagePath(p);
+    const name = p.replace(/[\\/]$/, '').split(/[\\/]/).pop();
+    const count = pathCounts[p];
+    const meta = isFile ? 'Image' : `Folder${count !== undefined ? ` · ${count} images` : ''}`;
+    const item = document.createElement('div');
+    item.className = 'queue-item';
+    item.innerHTML =
+      `<span class="queue-item-icon"><svg width="16" height="16"><use href="#${isFile ? 'ic-image' : 'ic-folder'}"/></svg></span>` +
+      `<div class="queue-item-info"><div class="queue-item-name">${escapeHtml(name)}</div>` +
+      `<div class="queue-item-meta">${escapeHtml(meta)}</div></div>` +
+      `<button class="queue-item-remove" title="Remove"><svg width="14" height="14"><use href="#ic-trash"/></svg></button>`;
+    item.querySelector('.queue-item-remove').addEventListener('click', () => removePath(p));
+    list.appendChild(item);
   }
 }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-// ─── Pipeline ──────────────────────────────────────────────────────────────────
+async function scanAll() {
+  if (!queue.length) { $('scan-results-card').classList.add('hidden'); $('btn-start').disabled = true; $('stats-row').classList.add('hidden'); return; }
+  const btn = $('btn-scan');
+  btn.disabled = true;
+  const r = await window.pixelforge.scanInputs(queue, settings.recursive);
+  pathCounts = r.perPath || {};
+  const all = r.images || [];
+  scannedImages = all;
+  btn.disabled = false;
+  renderQueue();
+
+  if (!all.length) { $('scan-results-card').classList.add('hidden'); $('btn-start').disabled = true; $('stats-row').classList.add('hidden'); return; }
+
+  $('scan-count').textContent = numFmt(all.length);
+  const totalSize = all.reduce((a, img) => a + img.size, 0);
+  $('scan-size-text').textContent = `Total size: ${byteFmt(totalSize)}`;
+  const types = {};
+  all.forEach(img => { const ext = (img.ext || '.?').replace('.', '').toUpperCase(); types[ext] = (types[ext] || 0) + 1; });
+  $('scan-type-pills').innerHTML = Object.entries(types).map(([ext, n]) => `<span class="type-pill">${ext} (${n})</span>`).join('');
+  $('scan-results-card').classList.remove('hidden');
+  $('btn-start').disabled = pipelineRunning;
+  updateStats(all.length, 0, 0, null);
+  $('stats-row').classList.remove('hidden');
+}
+
+// ─── Pipeline run ───────────────────────────────────────────────────────────
 async function onStartPipeline() {
-  if (!inputFolder || scannedImages.length === 0 || pipelineRunning) return;
-
-  pipelineRunning = true;
-  $('btn-start').disabled = true;
-  $('btn-cancel').classList.remove('hidden');
+  if (!queue.length || !scannedImages.length || pipelineRunning) return;
+  setRunningUI(true, false);
   $('progress-card').classList.remove('hidden');
+  $('results-card').classList.add('hidden');
   $('pipeline-log').innerHTML = '';
 
-  resetStage('upscaling', 'Waiting');
-  resetStage('compressing', 'Waiting');
-  setBadge('pipeline-status-badge', 'running', 'Processing...');
+  resetStage('upscaling');
+  resetStage('compressing');
+  if (pipelineMode === 'upscale') setStageSkipped('compressing');
+  if (pipelineMode === 'compress') setStageSkipped('upscaling');
 
-  log('Pipeline started — scanning batch...', 'log-hl');
+  setBadge('pipeline-status-badge', 'running', 'Processing…');
+  startElapsed();
+  log(`Pipeline started — ${scannedImages.length} images, mode: ${pipelineMode}`, 'log-hl');
 
   try {
     const s = await window.pixelforge.getSettings();
-    await window.pixelforge.startPipeline({ inputFolder, settings: s });
+    s.pipelineMode = pipelineMode;
+    await window.pixelforge.startPipeline({ queue, settings: s });
   } catch (err) {
     log('Error: ' + err.message, 'log-err');
-    pipelineRunning = false;
-    $('btn-start').disabled = false;
-    $('btn-cancel').classList.add('hidden');
-    setBadge('pipeline-status-badge', 'error', 'Error');
+    finishRun('error');
   }
 }
+async function onPause() { await window.pixelforge.pausePipeline(); setRunningUI(true, true); setBadge('pipeline-status-badge', 'paused', 'Paused'); log('Paused — finishing current step…', 'log-warn'); }
+async function onResume() { await window.pixelforge.resumePipeline(); setRunningUI(true, false); setBadge('pipeline-status-badge', 'running', 'Processing…'); log('Resumed.', 'log-hl'); }
+async function onCancel() { await window.pixelforge.cancelPipeline(); log('Cancelling…', 'log-warn'); }
 
-async function onCancelPipeline() {
-  await window.pixelforge.cancelPipeline();
-  pipelineRunning = false;
-  $('btn-start').disabled = false;
-  $('btn-cancel').classList.add('hidden');
-  // Show 'Cancelled' in the top-right badge — NOT an error
-  setBadge('pipeline-status-badge', 'cancelled', 'Cancelled');
-  log('Pipeline cancelled by user.', 'log-warn');
+function setRunningUI(running, paused) {
+  pipelineRunning = running;
+  $('btn-start').disabled = running || !scannedImages.length;
+  $('btn-pause').classList.toggle('hidden', !running || paused);
+  $('btn-resume').classList.toggle('hidden', !running || !paused);
+  $('btn-cancel').classList.toggle('hidden', !running);
 }
 
 function onPipelineProgress(data) {
-  const { stage, percent = 0, message = '', status, current, total } = data;
+  const { stage, percent = 0, message = '', status, current } = data;
+  if (data.elapsedMs !== undefined) updateTiming(data.elapsedMs, data.etaMs, data.throughput);
 
   if (stage === 'upscaling') {
-    if (status === 'done') {
-      setStage('upscaling', 100, message, 'done');
-      log(message, 'log-ok');
-      // Final accurate count
-      if (current !== undefined) updateStats(scannedImages.length, current, 0, null);
-    } else {
-      const displayMsg = (current !== undefined && total !== undefined)
-        ? `Upscaled ${current} of ${total} images`
-        : message;
-      setStage('upscaling', percent, displayMsg, 'run');
-      // Update UPSCALED counter in real-time
-      if (current !== undefined) {
-        updateStats(scannedImages.length, current, 0, null);
-        if (current > 0) log(displayMsg);
-      }
-    }
+    setStage('upscaling', percent, message, status === 'done' ? 'done' : 'run');
+    if (current !== undefined) { updateStats(scannedImages.length, current, undefined, null); if (current > 0) log(message); }
+    if (status === 'done') log(message, 'log-ok');
   } else if (stage === 'compressing') {
-    if (status === 'done') {
-      setStage('compressing', 100, message, 'done');
-    } else {
-      setStage('compressing', percent, message, 'run');
-      // Update COMPRESSED counter in real-time
-      if (data.current !== undefined) {
-        updateStats(scannedImages.length, scannedImages.length, data.current, null);
-        log(`Compression: ${data.current}/${data.total}`);
-      }
-    }
+    setStage('compressing', percent, message, status === 'done' ? 'done' : 'run');
+    if (current !== undefined) updateStats(scannedImages.length, undefined, current, null);
+    if (status === 'done') log(message, 'log-ok');
   } else if (stage === 'complete') {
-    setStage('upscaling', 100, 'Complete', 'done');
-    setStage('compressing', 100, 'Complete', 'done');
+    if (pipelineMode !== 'compress') setStage('upscaling', 100, 'Complete', 'done');
+    if (pipelineMode !== 'upscale') setStage('compressing', 100, 'Complete', 'done');
     setBadge('pipeline-status-badge', 'done', 'Complete');
     log('Pipeline complete.', 'log-ok');
   } else if (stage === 'cancelled') {
-    const lastUpPct = parseInt($('pct-upscaling')?.textContent) || 0;
-    setStage('upscaling',   lastUpPct, 'Cancelled', 'cancelled');
-    setStage('compressing', 0,         'Cancelled', 'cancelled');
+    const up = parseInt($('pct-upscaling')?.textContent) || 0;
+    setStage('upscaling', up, 'Cancelled', 'cancelled');
+    setStage('compressing', 0, 'Cancelled', 'cancelled');
     setBadge('pipeline-status-badge', 'cancelled', 'Cancelled');
-    log('Pipeline cancelled by user.', 'log-warn');
-    pipelineRunning = false;
-    $('btn-start').disabled = false;
-    $('btn-cancel').classList.add('hidden');
+    log('Pipeline cancelled.', 'log-warn');
+    finishRun('cancelled');
+  } else if (stage === 'error') {
+    setBadge('pipeline-status-badge', 'error', 'Error');
+    log('Error: ' + message, 'log-err');
+    finishRun('error');
   }
 }
 
-function onPipelineDone(data) {
-  pipelineRunning = false;
-  $('btn-start').disabled = false;
-  $('btn-cancel').classList.add('hidden');
-  if (data) updateStats(scannedImages.length, data.upscaledCount || 0, data.compressedCount || 0, data.savedPct);
+function onPipelineDone(result) {
+  finishRun('done');
+  lastResults = result.results || [];
+  updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, result.savedPct);
+  renderGallery(lastResults);
+  if (settings.soundOnComplete) playChime();
 }
 
-// Stage helpers
-function setStage(id, pct, msg, pillClass) {
-  const bar = $(`bar-${id}`);
-  const msgEl = $(`msg-${id}`);
-  const pctEl = $(`pct-${id}`);
-  const badge = $(`badge-${id}`);
+function finishRun(kind) {
+  setRunningUI(false, false);
+  stopElapsed();
+  if (kind === 'error') setBadge('pipeline-status-badge', 'error', 'Error');
+}
 
+// ─── Timing ─────────────────────────────────────────────────────────────────
+function startElapsed() {
+  pipelineStart = Date.now();
+  $('timing-elapsed').textContent = '0:00';
+  $('timing-eta').textContent = '—';
+  $('timing-rate').textContent = '—';
+  stopElapsed();
+  elapsedTimer = setInterval(() => { $('timing-elapsed').textContent = fmtDuration(Date.now() - pipelineStart); }, 500);
+}
+function stopElapsed() { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } }
+function updateTiming(elapsedMs, etaMs, throughput) {
+  if (elapsedMs !== undefined && !elapsedTimer) $('timing-elapsed').textContent = fmtDuration(elapsedMs);
+  $('timing-eta').textContent = etaMs && etaMs > 0 ? fmtDuration(etaMs) : '—';
+  $('timing-rate').textContent = throughput && throughput > 0 ? (throughput * 60).toFixed(1) : '—';
+}
+
+// ─── Stage helpers ──────────────────────────────────────────────────────────
+function setStage(id, pct, msg, pillClass) {
+  const bar = $(`bar-${id}`), msgEl = $(`msg-${id}`), pctEl = $(`pct-${id}`), badge = $(`badge-${id}`);
   pct = Math.min(100, Math.max(0, pct));
   bar.style.width = pct + '%';
-  msgEl.textContent = msg;
+  if (msg) msgEl.textContent = msg;
   pctEl.textContent = pct.toFixed(0) + '%';
-
   bar.classList.remove('animating', 'done', 'error', 'cancelled');
-  if (pillClass === 'run') {
-    bar.classList.add('animating');
-    badge.className = 'stage-pill pill-run';
-    badge.textContent = 'Running';
-  } else if (pillClass === 'done') {
-    bar.classList.add('done');
-    badge.className = 'stage-pill pill-done';
-    badge.textContent = 'Done';
-  } else if (pillClass === 'error') {
-    bar.classList.add('error');
-    badge.className = 'stage-pill pill-error';
-    badge.textContent = 'Error';
-  } else if (pillClass === 'cancelled') {
-    bar.classList.add('cancelled');
-    badge.className = 'stage-pill pill-cancelled';
-    badge.textContent = 'Cancelled';
-  } else {
-    badge.className = 'stage-pill pill-wait';
-    badge.textContent = 'Waiting';
-  }
+  const map = { run: ['animating', 'pill-run', 'Running'], done: ['done', 'pill-done', 'Done'], error: ['error', 'pill-error', 'Error'], cancelled: ['cancelled', 'pill-cancelled', 'Cancelled'], wait: ['', 'pill-wait', 'Waiting'] };
+  const [cls, pill, label] = map[pillClass] || map.wait;
+  if (cls) bar.classList.add(cls);
+  badge.className = 'stage-pill ' + pill;
+  badge.textContent = label;
 }
-function resetStage(id, label = 'Waiting') {
-  setStage(id, 0, id === 'compressing' ? 'Waiting for upscaling...' : 'Waiting to start...', 'wait');
+function resetStage(id) { setStage(id, 0, id === 'compressing' ? 'Waiting for upscaling…' : 'Waiting to start…', 'wait'); }
+function setStageSkipped(id) {
+  const badge = $(`badge-${id}`), msgEl = $(`msg-${id}`);
+  badge.className = 'stage-pill pill-wait';
+  badge.textContent = 'Skipped';
+  msgEl.textContent = 'Not part of this run';
 }
-function setBadge(id, type, label) {
-  const el = $(id);
-  if (!el) return;
-  el.className = 'status-badge ' + type;
-  el.textContent = label;
-}
+function setBadge(id, type, label) { const el = $(id); if (el) { el.className = 'status-badge ' + type; el.textContent = label; } }
 
-// Stats
 function updateStats(input, upscaled, compressed, savedPct) {
-  $('stat-input').textContent = numFmt(input);
-  $('stat-upscaled').textContent = numFmt(upscaled);
-  $('stat-compressed').textContent = numFmt(compressed);
-  $('stat-saved').textContent = savedPct !== null && savedPct !== undefined ? savedPct + '%' : '—';
+  if (input !== undefined) $('stat-input').textContent = numFmt(input);
+  if (upscaled !== undefined) $('stat-upscaled').textContent = numFmt(upscaled);
+  if (compressed !== undefined) $('stat-compressed').textContent = numFmt(compressed);
+  if (savedPct !== null && savedPct !== undefined) $('stat-saved').textContent = savedPct + '%';
 }
-
 function updateOutputPathDisplays() {
   if (!appPaths.upscaled) return;
   $('path-upscaled-display').textContent = appPaths.upscaled;
   $('path-compressed-display').textContent = appPaths.compressed;
 }
 
-// ─── Settings ─────────────────────────────────────────────────────────────────
-function populateSettingsForm() {
-  // Model + GPU are loaded dynamically by loadModels/loadGpus — don't override here
-  $('set-upscayl-scale').value   = settings.upscaylScale   || '4';
-  $('set-upscayl-format').value  = settings.upscaylFormat  || 'png';
-  $('set-upscayl-tile').value    = settings.upscaylTileSize || '0';
-  $('set-upscayl-tta').checked   = settings.upscaylTta     || false;
+// ─── Gallery + compare ──────────────────────────────────────────────────────
+function renderGallery(results) {
+  const grid = $('gallery-grid');
+  grid.innerHTML = '';
+  const items = (results || []).filter(r => r.upscaled || r.compressed);
+  if (!items.length) { $('results-card').classList.add('hidden'); return; }
+  $('results-card').classList.remove('hidden');
 
-  $('set-caesium-quality').value = settings.caesiumQuality !== undefined ? settings.caesiumQuality : 82;
-  $('set-caesium-quality-val').textContent = $('set-caesium-quality').value;
-  $('set-caesium-format').value  = settings.caesiumFormat  || 'same';
-  $('set-caesium-lossless').checked = settings.caesiumLossless || false;
-  $('set-caesium-meta').checked  = settings.caesiumKeepMeta || false;
+  for (const r of items.slice(0, 120)) {
+    const thumb = r.compressed || r.upscaled || r.original;
+    const openTarget = r.compressed || r.upscaled;
+    const name = String(thumb).split(/[\\/]/).pop();
+    const canCompare = r.original && r.upscaled && r.original !== r.upscaled;
 
-  $('set-upscayl-bin-path').value = settings.upscaylBinPath || '';
-  $('set-caesium-bin-path').value = settings.caesiumBinPath  || '';
-  $('set-models-path').value      = settings.modelsPath      || '';
-  $('set-upscaled-path').value    = settings.upscaledPath    || '';
-  $('set-compressed-path').value  = settings.compressedPath  || '';
+    const tile = document.createElement('div');
+    tile.className = 'gallery-tile';
+    tile.innerHTML =
+      `<img loading="lazy" src="${fileUrl(thumb)}" alt=""/>` +
+      `<div class="gallery-tile-overlay"><div class="gallery-tile-name">${escapeHtml(name)}</div>` +
+      `<div class="gallery-actions">` +
+      (canCompare ? `<button class="gallery-action" data-act="compare" title="Compare"><svg width="14" height="14"><use href="#ic-compare"/></svg></button>` : '') +
+      `<button class="gallery-action" data-act="open" title="Open"><svg width="14" height="14"><use href="#ic-external"/></svg></button>` +
+      `<button class="gallery-action" data-act="reveal" title="Show in folder"><svg width="14" height="14"><use href="#ic-folder-open"/></svg></button>` +
+      `</div></div>`;
 
-  const accent = settings.accentColor || '#6366f1';
-  $('set-accent-color').value          = accent;
-  $('set-accent-preview').textContent  = accent;
+    tile.querySelector('[data-act="open"]').addEventListener('click', (e) => { e.stopPropagation(); window.pixelforge.openFile(openTarget); });
+    tile.querySelector('[data-act="reveal"]').addEventListener('click', (e) => { e.stopPropagation(); window.pixelforge.showInFolder(openTarget); });
+    const cmpBtn = tile.querySelector('[data-act="compare"]');
+    if (cmpBtn) cmpBtn.addEventListener('click', (e) => { e.stopPropagation(); openCompare(r.original, r.upscaled, name); });
+    tile.addEventListener('click', () => canCompare ? openCompare(r.original, r.upscaled, name) : window.pixelforge.openFile(openTarget));
+    grid.appendChild(tile);
+  }
 }
 
+function wireCompareModal() {
+  $('compare-close').addEventListener('click', () => $('compare-modal').classList.add('hidden'));
+  $('compare-modal').addEventListener('click', (e) => { if (e.target.id === 'compare-modal') $('compare-modal').classList.add('hidden'); });
+  $('cmp-range').addEventListener('input', (e) => setCmpPos(parseFloat(e.target.value)));
+}
+function openCompare(original, upscaled, name) {
+  $('compare-title').textContent = name ? `Before / After — ${name}` : 'Before / After';
+  $('cmp-before-img').src = fileUrl(upscaled);
+  $('cmp-after-img').src = fileUrl(original);
+  setCmpPos(50);
+  $('compare-modal').classList.remove('hidden');
+}
+function setCmpPos(p) {
+  p = Math.min(100, Math.max(0, p));
+  $('cmp-after').style.clipPath = `inset(0 ${100 - p}% 0 0)`;
+  $('cmp-divider').style.left = p + '%';
+  $('cmp-handle').style.left = p + '%';
+  $('cmp-range').value = p;
+}
+
+// ─── Sound ──────────────────────────────────────────────────────────────────
+function playChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [880, 1174.66];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.13;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t); osc.stop(t + 0.4);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch {}
+}
+
+// ─── Settings ───────────────────────────────────────────────────────────────
+function wireSettings() {
+  $('btn-save-settings').addEventListener('click', onSaveSettings);
+  $('set-caesium-quality').addEventListener('input', () => { $('set-caesium-quality-val').textContent = $('set-caesium-quality').value; });
+  $('set-accent-color').addEventListener('input', () => { const v = $('set-accent-color').value; $('set-accent-preview').textContent = v; applyAccentColor(v); });
+  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.theme)));
+  $('set-recursive').addEventListener('change', () => { settings.recursive = $('set-recursive').checked; });
+
+  const browse = (btnId, inputId, isFolder) => $(btnId).addEventListener('click', async () => {
+    const f = isFolder ? await window.pixelforge.selectFolder() : await window.pixelforge.selectFile([{ name: 'Executable', extensions: ['exe'] }]);
+    if (f) $(inputId).value = f;
+  });
+  browse('btn-browse-upscayl-bin', 'set-upscayl-bin-path', false);
+  browse('btn-browse-caesium-bin', 'set-caesium-bin-path', false);
+  browse('btn-browse-models', 'set-models-path', true);
+  browse('btn-browse-upscaled', 'set-upscaled-path', true);
+  browse('btn-browse-compressed', 'set-compressed-path', true);
+
+  $('btn-rerun-setup').addEventListener('click', () => showSetupOverlay(true));
+  $('btn-open-logs').addEventListener('click', () => window.pixelforge.openLogs());
+}
+function populateSettingsForm() {
+  $('set-upscayl-scale').value = settings.upscaylScale || '4';
+  $('set-upscayl-format').value = settings.upscaylFormat || 'png';
+  $('set-upscayl-tile').value = settings.upscaylTileSize || '0';
+  $('set-upscayl-tta').checked = !!settings.upscaylTta;
+  $('set-caesium-quality').value = settings.caesiumQuality !== undefined ? settings.caesiumQuality : 82;
+  $('set-caesium-quality-val').textContent = $('set-caesium-quality').value;
+  $('set-caesium-format').value = settings.caesiumFormat || 'same';
+  $('set-caesium-lossless').checked = !!settings.caesiumLossless;
+  $('set-caesium-meta').checked = !!settings.caesiumKeepMeta;
+  $('set-upscayl-bin-path').value = settings.upscaylBinPath || '';
+  $('set-caesium-bin-path').value = settings.caesiumBinPath || '';
+  $('set-models-path').value = settings.modelsPath || '';
+  $('set-upscaled-path').value = settings.upscaledPath || '';
+  $('set-compressed-path').value = settings.compressedPath || '';
+  $('set-recursive').checked = !!settings.recursive;
+  $('set-naming').value = settings.namingTemplate || '{name}';
+  $('set-notify').checked = settings.notifyOnComplete !== false;
+  $('set-sound').checked = !!settings.soundOnComplete;
+  $('set-autoupdate').checked = settings.autoCheckUpdates !== false;
+  const accent = settings.accentColor || '#6366f1';
+  $('set-accent-color').value = accent;
+  $('set-accent-preview').textContent = accent;
+}
 async function onSaveSettings() {
+  const theme = document.querySelector('#theme-seg .seg-btn.active')?.dataset.theme || 'dark';
   const s = {
-    upscaylModel:    $('set-upscayl-model').value,
-    upscaylScale:    $('set-upscayl-scale').value,
-    upscaylFormat:   $('set-upscayl-format').value,
-    upscaylGpu:      $('set-upscayl-gpu').value,
+    upscaylModel: $('set-upscayl-model').value,
+    upscaylScale: $('set-upscayl-scale').value,
+    upscaylFormat: $('set-upscayl-format').value,
+    upscaylGpu: $('set-upscayl-gpu').value,
     upscaylTileSize: $('set-upscayl-tile').value,
-    upscaylTta:      $('set-upscayl-tta').checked,
-    caesiumQuality:  parseInt($('set-caesium-quality').value),
-    caesiumFormat:   $('set-caesium-format').value,
+    upscaylTta: $('set-upscayl-tta').checked,
+    caesiumQuality: parseInt($('set-caesium-quality').value),
+    caesiumFormat: $('set-caesium-format').value,
     caesiumLossless: $('set-caesium-lossless').checked,
     caesiumKeepMeta: $('set-caesium-meta').checked,
-    upscaylBinPath:  $('set-upscayl-bin-path').value,
-    caesiumBinPath:  $('set-caesium-bin-path').value,
-    modelsPath:      $('set-models-path').value,
-    upscaledPath:    $('set-upscaled-path').value,
-    compressedPath:  $('set-compressed-path').value,
-    accentColor:     $('set-accent-color').value,
+    upscaylBinPath: $('set-upscayl-bin-path').value,
+    caesiumBinPath: $('set-caesium-bin-path').value,
+    modelsPath: $('set-models-path').value,
+    upscaledPath: $('set-upscaled-path').value,
+    compressedPath: $('set-compressed-path').value,
+    accentColor: $('set-accent-color').value,
+    theme,
+    recursive: $('set-recursive').checked,
+    namingTemplate: $('set-naming').value || '{name}',
+    notifyOnComplete: $('set-notify').checked,
+    soundOnComplete: $('set-sound').checked,
+    autoCheckUpdates: $('set-autoupdate').checked,
   };
   await window.pixelforge.saveSettings(s);
   settings = { ...settings, ...s };
@@ -609,8 +679,80 @@ async function onSaveSettings() {
   const orig = btn.innerHTML;
   btn.innerHTML = '<svg width="13" height="13"><use href="#ic-check"/></svg> Saved';
   btn.disabled = true;
-  setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1800);
+  setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1600);
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
+// ─── Updates ────────────────────────────────────────────────────────────────
+function wireUpdates() {
+  $('btn-check-updates').addEventListener('click', () => doCheckUpdates(true));
+  $('btn-about-check').addEventListener('click', () => { navigateTo('settings'); doCheckUpdates(true); });
+  $('btn-download-update').addEventListener('click', doDownloadUpdate);
+  $('btn-run-installer').addEventListener('click', () => lastUpdate?.path && window.pixelforge.runInstaller(lastUpdate.path));
+  $('update-banner-dismiss').addEventListener('click', () => $('update-banner').classList.add('hidden'));
+  $('update-banner-btn').addEventListener('click', () => { $('update-banner').classList.add('hidden'); navigateTo('settings'); if (lastUpdate) presentUpdate(lastUpdate); });
+}
+async function doCheckUpdates(showStatus) {
+  const btn = $('btn-check-updates');
+  const icon = btn.querySelector('svg');
+  if (icon) icon.classList.add('spin');
+  $('about-update-state').textContent = 'Checking…';
+  const result = await window.pixelforge.checkUpdates();
+  if (icon) icon.classList.remove('spin');
+
+  if (!result.ok) {
+    $('about-update-state').textContent = 'Check failed';
+    if (showStatus) showUpdateStatus('error', 'Could not check for updates: ' + (result.error || 'network error'));
+    return;
+  }
+  lastUpdate = result;
+  if (result.hasUpdate) {
+    $('about-update-state').textContent = `v${result.latest} available`;
+    presentUpdate(result);
+  } else {
+    $('about-update-state').textContent = 'Up to date';
+    if (showStatus) showUpdateStatus('success', `You're on the latest version (v${result.current}).`);
+    $('upd-download-wrap').classList.add('hidden');
+  }
+}
+function presentUpdate(result) {
+  showUpdateStatus('info', `Version ${result.latest} is available (you have ${result.current}).`);
+  $('upd-download-wrap').classList.remove('hidden');
+  $('upd-asset-name').textContent = result.assetName || 'PixelForge Setup';
+  $('btn-download-update').classList.remove('hidden');
+  $('btn-run-installer').classList.add('hidden');
+  $('upd-dl-bar').style.width = '0%';
+  $('upd-dl-pct').textContent = '0%';
+}
+function showUpdateStatus(type, text) {
+  $('upd-status-wrap').classList.remove('hidden');
+  $('upd-status').className = 'alert alert-' + (type === 'error' ? 'error' : type === 'success' ? 'success' : 'info');
+  $('upd-status-text').textContent = text;
+}
+async function doDownloadUpdate() {
+  if (!lastUpdate?.assetUrl) { showUpdateStatus('error', 'No installer asset found for this release.'); return; }
+  $('btn-download-update').disabled = true;
+  window.pixelforge.removeAllListeners('update-progress');
+  window.pixelforge.onUpdateProgress((d) => {
+    $('upd-dl-bar').style.width = (d.percent || 0) + '%';
+    $('upd-dl-pct').textContent = (d.percent || 0) + '%';
+  });
+  const res = await window.pixelforge.downloadUpdate({ assetUrl: lastUpdate.assetUrl, assetName: lastUpdate.assetName });
+  $('btn-download-update').disabled = false;
+  if (res.success) {
+    lastUpdate.path = res.path;
+    $('upd-dl-bar').classList.add('done');
+    showUpdateStatus('success', 'Download complete. Run the installer to update.');
+    $('btn-run-installer').classList.remove('hidden');
+  } else {
+    showUpdateStatus('error', 'Download failed: ' + (res.error || 'unknown error'));
+  }
+}
+function onUpdateAvailable(result) {
+  lastUpdate = result;
+  $('about-update-state').textContent = `v${result.latest} available`;
+  $('update-banner-title').textContent = `PixelForge ${result.latest} is available`;
+  $('update-banner-sub').textContent = `You're on v${result.current}. Update from Settings.`;
+  $('update-banner').classList.remove('hidden');
+}
+
 document.addEventListener('DOMContentLoaded', init);

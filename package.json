@@ -1,6 +1,6 @@
 {
   "name": "pixelforge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered image upscaling and compression automation by Refora Technologies",
   "main": "main.js",
   "author": "Refora Technologies",
@@ -8,6 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "lint": "eslint .",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir"
   },
@@ -18,7 +19,7 @@
   "devDependencies": {
     "electron": "^28.0.0",
     "electron-builder": "^24.13.3",
-    "png-to-ico": "^3.0.1"
+    "eslint": "^8.57.0"
   },
   "build": {
     "appId": "com.reforatech.pixelforge",
