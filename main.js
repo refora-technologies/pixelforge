@@ -62,8 +62,32 @@ function createWindow() {
 
   mainWindow.on('maximize', () => send('window-maximized-changed', true));
   mainWindow.on('unmaximize', () => send('window-maximized-changed', false));
-  mainWindow.on('close', saveBounds);
+  mainWindow.on('close', onWindowClose);
   mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+let forceQuit = false;
+
+function onWindowClose(e) {
+  if (!forceQuit && pipeline.isRunning() && settingsModule.getSettings().confirmOnExit) {
+    e.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      buttons: ['Keep running', 'Stop and quit'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'PixelForge is still processing',
+      message: 'A pipeline run is still in progress.',
+      detail: 'Quitting now stops the run. Images already written stay on disk.',
+    });
+    if (choice === 1) {
+      forceQuit = true;
+      pipeline.cancel();
+      mainWindow.close();
+    }
+    return;
+  }
+  saveBounds();
 }
 
 async function maybeAutoCheckUpdates() {
@@ -117,30 +141,35 @@ ipcMain.handle('select-images', async () => {
 });
 
 // ── Scan (accepts mixed files and folders) ──
+// Async on purpose: a synchronous walk over a large tree blocks the main
+// process and freezes the window along with it.
 ipcMain.handle('scan-inputs', async (_, inputs, recursive) => {
   const images = [];
   const perPath = {};
-  const pushImage = (full, name) => {
+
+  const pushImage = async (full, name) => {
     try {
-      const stat = fs.statSync(full);
+      const stat = await fs.promises.stat(full);
       images.push({ name, path: full, size: stat.size, ext: path.extname(name).toLowerCase() });
       return true;
     } catch { return false; }
   };
-  const walk = (dir) => {
+
+  const walk = async (dir) => {
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) { if (recursive) walk(full); continue; }
-      if (paths.IMAGE_RE.test(e.name)) pushImage(full, e.name);
+      if (e.isDirectory()) { if (recursive) await walk(full); continue; }
+      if (paths.IMAGE_RE.test(e.name)) await pushImage(full, e.name);
     }
   };
+
   for (const p of inputs || []) {
     let stat;
-    try { stat = fs.statSync(p); } catch { perPath[p] = 0; continue; }
-    if (stat.isDirectory()) { const before = images.length; walk(p); perPath[p] = images.length - before; }
-    else if (paths.IMAGE_RE.test(p)) perPath[p] = pushImage(p, path.basename(p)) ? 1 : 0;
+    try { stat = await fs.promises.stat(p); } catch { perPath[p] = 0; continue; }
+    if (stat.isDirectory()) { const before = images.length; await walk(p); perPath[p] = images.length - before; }
+    else if (paths.IMAGE_RE.test(p)) perPath[p] = (await pushImage(p, path.basename(p))) ? 1 : 0;
     else perPath[p] = 0;
   }
   return { images, count: images.length, perPath };
@@ -168,9 +197,15 @@ ipcMain.handle('resume-pipeline', () => pipeline.resume());
 function notifyDone(result, settings) {
   if (!settings?.notifyOnComplete || !Notification.isSupported()) return;
   try {
-    const body = `Upscaled ${result.upscaledCount}, compressed ${result.compressedCount}` +
+    const parts = [];
+    if (result.upscaledCount) parts.push(`Upscaled ${result.upscaledCount}`);
+    if (result.compressedCount) parts.push(`compressed ${result.compressedCount}`);
+    const body = (parts.join(', ') || 'Run finished') +
       (result.savedPct ? ` — saved ${result.savedPct}% space` : '');
-    new Notification({ title: 'PixelForge — Pipeline complete', body }).show();
+    const notification = new Notification({ title: 'PixelForge — Pipeline complete', body });
+    const folder = result.compressedDir || result.upscaledDir;
+    if (folder) notification.on('click', () => shell.openPath(folder));
+    notification.show();
   } catch {}
 }
 
@@ -179,10 +214,16 @@ ipcMain.handle('open-folder', (_, folderPath) => shell.openPath(folderPath));
 ipcMain.handle('open-file', (_, filePath) => shell.openPath(filePath));
 ipcMain.handle('show-in-folder', (_, filePath) => shell.showItemInFolder(filePath));
 ipcMain.handle('open-logs', () => { paths.ensureDir(paths.getLogsDir()); return shell.openPath(paths.getLogsDir()); });
+ipcMain.handle('open-external', (_, url) => {
+  if (!/^https:\/\//i.test(String(url))) return false;
+  shell.openExternal(url);
+  return true;
+});
 
 // ── Settings ──
 ipcMain.handle('get-settings', () => settingsModule.getSettings());
 ipcMain.handle('save-settings', (_, s) => settingsModule.saveSettings(s));
+ipcMain.handle('reset-settings', () => settingsModule.resetSettings());
 ipcMain.handle('get-app-paths', () => ({
   upscaled: paths.getUpscaledDir(),
   compressed: paths.getCompressedDir(),
@@ -196,7 +237,7 @@ ipcMain.handle('list-models', () => {
   const modelsDir = paths.getModelsDir();
   return paths.listModelsFromDir(modelsDir).map(id => ({ id, name: paths.modelDisplayName(id) }));
 });
-ipcMain.handle('list-gpus', () => gpu.listGpus());
+ipcMain.handle('list-gpus', (_, opts) => gpu.listGpus(opts));
 
 // ── Updates ──
 ipcMain.handle('check-updates', () => updater.checkForUpdates());

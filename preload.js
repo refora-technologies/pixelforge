@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('pixelforge', {
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
   openLogs: () => ipcRenderer.invoke('open-logs'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
   // Pipeline
   startPipeline: (args) => ipcRenderer.invoke('start-pipeline', args),
@@ -37,12 +38,13 @@ contextBridge.exposeInMainWorld('pixelforge', {
   // Settings & paths
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  resetSettings: () => ipcRenderer.invoke('reset-settings'),
   getAppPaths: () => ipcRenderer.invoke('get-app-paths'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
   // Models & GPUs
   listModels: () => ipcRenderer.invoke('list-models'),
-  listGpus: () => ipcRenderer.invoke('list-gpus'),
+  listGpus: (opts) => ipcRenderer.invoke('list-gpus', opts),
 
   // Updates
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
