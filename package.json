@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test": "node tools/test-updater.js",
     "test:update-flow": "electron tools/test-update-flow.js",
+    "verify:release": "electron tools/verify-release.js",
     "shoot": "electron tools/shoot.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir"
