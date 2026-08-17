@@ -182,6 +182,8 @@ function openSelectMenu(sel, trigger) {
 
   const place = () => {
     const r = trigger.getBoundingClientRect();
+    // Scrolling the trigger out of sight would strand the menu off-screen.
+    if (r.bottom < 0 || r.top > window.innerHeight) { closeSelectMenu(); return; }
     const needed = Math.min(288, menu.scrollHeight + 8);
     const below = window.innerHeight - r.bottom;
     const flip = below < needed && r.top > below;
