@@ -1,6 +1,14 @@
 ; PixelForge NSIS Custom Install Script
 ; Creates PixelForge output folders in user's Documents on install
 
+; PixelForge is a per-user app and always installs into LocalAppData, so the
+; "Choose Installation Options" page has nothing to decide. Forcing the mode
+; skips that page, whose elevation path could leave the installer stuck on
+; Next with no way forward.
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
 !macro customPageAfterChangeDir
   Page custom pfConfirmDirShow
 

@@ -1,6 +1,6 @@
 {
   "name": "pixelforge",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "AI-powered image upscaling and compression automation by Refora Technologies",
   "main": "main.js",
   "author": "Refora Technologies",
