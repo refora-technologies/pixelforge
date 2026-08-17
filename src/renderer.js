@@ -17,6 +17,8 @@ let lastUpdate = null;
 let pipelineStart = 0;
 let elapsedTimer = null;
 let scanToken = 0;
+let cmpPos = 50;
+let cmpFullscreen = false;
 
 const $ = (id) => document.getElementById(id);
 const numFmt = (n) => Number(n).toLocaleString();
@@ -54,6 +56,168 @@ function log(text, cls = '') {
   box.scrollTop = box.scrollHeight;
 }
 
+// ─── Sliding indicators ─────────────────────────────────────────────────────
+// Segmented controls and the sidebar nav share one moving pill instead of
+// re-painting a background on each item, so the highlight travels between them.
+function initSegmented() {
+  document.querySelectorAll('.segmented').forEach(seg => {
+    if (seg.querySelector('.seg-indicator')) return;
+    const ind = document.createElement('span');
+    ind.className = 'seg-indicator';
+    seg.insertBefore(ind, seg.firstChild);
+  });
+}
+
+function syncSegmented(seg) {
+  if (!seg) return;
+  const ind = seg.querySelector('.seg-indicator');
+  const active = seg.querySelector('.seg-btn.active');
+  if (!ind) return;
+  if (!active) { ind.classList.remove('ready'); return; }
+  const segRect = seg.getBoundingClientRect();
+  const btnRect = active.getBoundingClientRect();
+  if (!segRect.width) return;
+  const borderLeft = parseFloat(getComputedStyle(seg).borderLeftWidth) || 0;
+  ind.style.width = btnRect.width + 'px';
+  ind.style.transform = `translateX(${btnRect.left - segRect.left - borderLeft}px)`;
+  ind.classList.add('ready');
+}
+
+function syncAllSegmented() {
+  document.querySelectorAll('.segmented').forEach(syncSegmented);
+}
+
+function syncNavIndicator() {
+  const list = $('nav-list'), ind = $('nav-indicator');
+  if (!list || !ind) return;
+  const active = list.querySelector('.nav-item.active');
+  if (!active) { ind.classList.remove('ready'); return; }
+  ind.style.height = active.offsetHeight + 'px';
+  ind.style.transform = `translateY(${active.offsetTop}px)`;
+  ind.classList.add('ready');
+}
+
+// ─── Range inputs ───────────────────────────────────────────────────────────
+// --pct drives the filled portion of the track via a gradient.
+function initRanges() {
+  document.querySelectorAll('input.ctrl-range').forEach(r => {
+    const upd = () => {
+      const min = parseFloat(r.min) || 0;
+      const max = parseFloat(r.max) || 100;
+      const pct = max > min ? ((parseFloat(r.value) - min) / (max - min)) * 100 : 0;
+      r.style.setProperty('--pct', pct + '%');
+    };
+    r.addEventListener('input', upd);
+    r._pfSync = upd;
+    upd();
+  });
+}
+function syncRanges() {
+  document.querySelectorAll('input.ctrl-range').forEach(r => r._pfSync && r._pfSync());
+}
+
+// ─── Custom select ──────────────────────────────────────────────────────────
+// The native <select> stays in the DOM as the source of truth so existing
+// .value reads keep working; only its presentation is replaced.
+let openSelect = null;
+
+function enhanceSelects() {
+  document.querySelectorAll('select.ctrl-select').forEach(enhanceSelect);
+}
+
+function enhanceSelect(sel) {
+  if (sel.dataset.enhanced) return;
+  sel.dataset.enhanced = '1';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'sel';
+  if (sel.style.minWidth) wrap.style.minWidth = sel.style.minWidth;
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(sel);
+  sel.classList.add('sel-native');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'sel-trigger';
+  trigger.innerHTML = '<span class="sel-value"></span><svg class="sel-chev" width="14" height="14"><use href="#ic-chevron"/></svg>';
+  wrap.appendChild(trigger);
+
+  sel._pfSync = () => {
+    const opt = sel.options[sel.selectedIndex];
+    trigger.querySelector('.sel-value').textContent = opt ? opt.textContent : '';
+  };
+  sel._pfSync();
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openSelect && openSelect.sel === sel) closeSelectMenu();
+    else openSelectMenu(sel, trigger);
+  });
+}
+
+function syncSelects() {
+  document.querySelectorAll('select.ctrl-select').forEach(s => s._pfSync && s._pfSync());
+}
+
+function openSelectMenu(sel, trigger) {
+  closeSelectMenu();
+  const menu = document.createElement('div');
+  menu.className = 'sel-menu';
+  Array.from(sel.options).forEach((opt, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sel-opt' + (i === sel.selectedIndex ? ' selected' : '');
+    b.innerHTML = '<span class="sel-opt-label"></span><svg class="sel-check" width="13" height="13"><use href="#ic-check"/></svg>';
+    b.querySelector('.sel-opt-label').textContent = opt.textContent;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sel.selectedIndex = i;
+      sel._pfSync();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      closeSelectMenu();
+    });
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+
+  const place = () => {
+    const r = trigger.getBoundingClientRect();
+    const needed = Math.min(288, menu.scrollHeight + 8);
+    const below = window.innerHeight - r.bottom;
+    const flip = below < needed && r.top > below;
+    menu.classList.toggle('flip-up', flip);
+    const width = Math.max(r.width, Math.min(400, menu.scrollWidth + 10));
+    menu.style.width = width + 'px';
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) + 'px';
+    if (flip) { menu.style.top = 'auto'; menu.style.bottom = (window.innerHeight - r.top + 5) + 'px'; }
+    else { menu.style.bottom = 'auto'; menu.style.top = (r.bottom + 5) + 'px'; }
+  };
+  place();
+  trigger.classList.add('open');
+  menu.querySelector('.sel-opt.selected')?.scrollIntoView({ block: 'nearest' });
+
+  const onDoc = (e) => { if (!menu.contains(e.target) && !trigger.contains(e.target)) closeSelectMenu(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeSelectMenu(); } };
+  document.addEventListener('mousedown', onDoc);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('resize', place);
+  $('content').addEventListener('scroll', place, true);
+
+  openSelect = { sel, trigger, menu, onDoc, onKey, place };
+}
+
+function closeSelectMenu() {
+  if (!openSelect) return;
+  const { trigger, menu, onDoc, onKey, place } = openSelect;
+  document.removeEventListener('mousedown', onDoc);
+  document.removeEventListener('keydown', onKey, true);
+  window.removeEventListener('resize', place);
+  $('content').removeEventListener('scroll', place, true);
+  trigger.classList.remove('open');
+  menu.remove();
+  openSelect = null;
+}
+
 // ─── Toasts ─────────────────────────────────────────────────────────────────
 function toast(message, type = 'info', ms = 3400) {
   const stack = $('toast-stack');
@@ -74,6 +238,10 @@ function toast(message, type = 'info', ms = 3400) {
 // Wiring happens before any data loads so the window is interactive
 // immediately — model and GPU lookups can take seconds and must not block it.
 async function init() {
+  initSegmented();
+  enhanceSelects();
+  initRanges();
+
   wireTitlebar();
   wireNav();
   wireDashboard();
@@ -82,6 +250,8 @@ async function init() {
   wireCompareModal();
   wireShortcuts();
   wireExternalLinks();
+
+  window.addEventListener('resize', () => { syncAllSegmented(); syncNavIndicator(); });
 
   window.pixelforge.onPipelineProgress(onPipelineProgress);
   window.pixelforge.onPipelineDone(onPipelineDone);
@@ -96,6 +266,7 @@ async function init() {
   populateSettingsForm();
   setMode(pipelineMode);
   setOutputMode(outputMode);
+  syncNavIndicator();
 
   if (settings.restoreSession && Array.isArray(settings.savedInputQueue) && settings.savedInputQueue.length) {
     addPaths(settings.savedInputQueue, true);
@@ -133,11 +304,15 @@ function wireNav() {
   });
 }
 function navigateTo(page) {
+  closeSelectMenu();
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
   $(`page-${page}`)?.classList.add('active');
   $('content').scrollTop = 0;
+  syncNavIndicator();
+  // The newly shown page was display:none, so its controls had no geometry yet.
+  requestAnimationFrame(syncAllSegmented);
 }
 function wireExternalLinks() {
   document.querySelectorAll('[data-link]').forEach(el => {
@@ -146,9 +321,11 @@ function wireExternalLinks() {
 }
 function wireShortcuts() {
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('compare-modal').classList.contains('hidden')) {
-      closeCompare();
-      return;
+    const compareOpen = !$('compare-modal').classList.contains('hidden');
+    if (compareOpen && !e.ctrlKey && !e.altKey) {
+      // Escape steps out of fullscreen before it closes the viewer.
+      if (e.key === 'Escape') { cmpFullscreen ? toggleCompareFullscreen(false) : closeCompare(); return; }
+      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleCompareFullscreen(); return; }
     }
     if (!e.ctrlKey || e.altKey || e.shiftKey) return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
@@ -167,6 +344,7 @@ function applyTheme(theme) {
   const value = theme === 'light' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', value);
   document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === value));
+  syncSegmented($('theme-seg'));
   try { localStorage.setItem('pf.theme', value); } catch {}
 }
 function applyAccentColor(hex) {
@@ -199,6 +377,7 @@ async function loadModels(currentModel) {
     }
     if (currentModel) sel.value = currentModel;
     if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+    sel._pfSync?.();
   } catch (e) { console.error('loadModels', e); }
 }
 
@@ -222,6 +401,7 @@ async function loadGpus(currentGpu, opts) {
       sel.appendChild(opt);
     }
     sel.value = currentGpu && gpus.some(g => g.id === String(currentGpu)) ? String(currentGpu) : 'auto';
+    sel._pfSync?.();
     return gpus;
   } catch (e) { console.error('loadGpus', e); return []; }
 }
@@ -361,11 +541,13 @@ function wireDashboard() {
 function setMode(mode) {
   pipelineMode = mode;
   document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  syncSegmented($('mode-seg'));
 }
 
 function setOutputMode(mode) {
   outputMode = mode === 'keep' ? 'keep' : 'replace';
   document.querySelectorAll('#output-mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.outmode === outputMode));
+  syncSegmented($('output-mode-seg'));
   $('output-mode-desc').textContent = outputMode === 'keep'
     ? 'Every run lands in its own timestamped folder'
     : 'Each run replaces the last one';
@@ -696,29 +878,66 @@ function renderGallery(results) {
 
 function wireCompareModal() {
   $('compare-close').addEventListener('click', closeCompare);
+  $('compare-expand').addEventListener('click', () => toggleCompareFullscreen());
   $('compare-modal').addEventListener('click', (e) => { if (e.target.id === 'compare-modal') closeCompare(); });
   $('cmp-range').addEventListener('input', (e) => setCmpPos(parseFloat(e.target.value)));
+  $('cmp').addEventListener('dblclick', () => toggleCompareFullscreen());
+  // Images arrive async and the frame resizes with the window — both change
+  // where the labels sit relative to the divider.
+  $('cmp-img-base').addEventListener('load', () => setCmpPos(cmpPos));
+  window.addEventListener('resize', () => {
+    if (!$('compare-modal').classList.contains('hidden')) setCmpPos(cmpPos);
+  });
 }
+
 // The base image fills the frame and shows through on the right; the clipped
-// overlay sits on top and reveals the left-hand side.
+// overlay sits on top and reveals the original on the left-hand side.
 function openCompare(original, upscaled, name) {
   $('compare-title').textContent = name ? `Before / After — ${name}` : 'Before / After';
   $('cmp-img-base').src = fileUrl(upscaled);
   $('cmp-img-overlay').src = fileUrl(original);
-  setCmpPos(50);
   $('compare-modal').classList.remove('hidden');
+  setCmpPos(50);
+  requestAnimationFrame(() => setCmpPos(50));
 }
+
 function closeCompare() {
   $('compare-modal').classList.add('hidden');
+  toggleCompareFullscreen(false);
   $('cmp-img-base').src = '';
   $('cmp-img-overlay').src = '';
 }
+
+function toggleCompareFullscreen(force) {
+  cmpFullscreen = force === undefined ? !cmpFullscreen : force;
+  $('compare-card').classList.toggle('is-fullscreen', cmpFullscreen);
+  $('compare-expand-icon').setAttribute('href', cmpFullscreen ? '#ic-collapse' : '#ic-expand');
+  $('compare-expand').title = cmpFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
+  requestAnimationFrame(() => setCmpPos(cmpPos));
+}
+
 function setCmpPos(p) {
   p = Math.min(100, Math.max(0, p));
+  cmpPos = p;
   $('cmp-clip').style.clipPath = `inset(0 ${100 - p}% 0 0)`;
   $('cmp-divider').style.left = p + '%';
   $('cmp-handle').style.left = p + '%';
   $('cmp-range').value = p;
+  updateCmpTags(p);
+}
+
+// A side's label is only truthful while that side is still on screen, so each
+// one hides once the divider sweeps past it.
+function updateCmpTags(p) {
+  const width = $('cmp').clientWidth;
+  if (!width) return;
+  const original = $('cmp-tag-original');
+  const upscaled = $('cmp-tag-upscaled');
+  const inset = 11; // matches .cmp-tag left/right in the stylesheet
+  const originalEdge = ((inset + original.offsetWidth) / width) * 100;
+  const upscaledEdge = 100 - ((inset + upscaled.offsetWidth) / width) * 100;
+  original.classList.toggle('is-hidden', p < originalEdge);
+  upscaled.classList.toggle('is-hidden', p > upscaledEdge);
 }
 
 // ─── Sound ──────────────────────────────────────────────────────────────────
@@ -814,6 +1033,8 @@ function populateSettingsForm() {
   const accent = settings.accentColor || '#6366f1';
   $('set-accent-color').value = accent;
   $('set-accent-preview').textContent = accent;
+  syncSelects();
+  syncRanges();
 }
 
 async function onSaveSettings() {
