@@ -67,6 +67,13 @@ function clearDir(dir) {
   } catch {}
 }
 
+// run-2026-08-17_14-32-05 — sortable and filename-safe.
+function runStamp(date = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `run-${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}` +
+         `_${p(date.getHours())}-${p(date.getMinutes())}-${p(date.getSeconds())}`;
+}
+
 function placeFile(src, dest) {
   try { fs.linkSync(src, dest); }
   catch { fs.copyFileSync(src, dest); }
@@ -160,6 +167,7 @@ function runWithPolling(bin, args, cwd, watchDir, onPoll) {
 }
 
 async function runPipeline(args, send) {
+  if (state.running) return { success: false, error: 'A run is already in progress.' };
   state.running = true;
   state.cancelled = false;
   state.paused = false;
@@ -182,9 +190,14 @@ async function runPipelineInner({ queue, settings }, send) {
   const upscaylBin = paths.getUpscaylBin();
   const caesiumBin = paths.getCaesiumBin();
   const modelsDir = paths.getModelsDir();
-  const upscaledRoot = paths.getUpscaledDir();
-  const compressedRoot = paths.getCompressedDir();
   const tmpInputDir = paths.getTempInputDir();
+
+  // 'keep' writes each run into its own timestamped subfolder so earlier
+  // results survive; 'replace' reuses the root and wipes it first.
+  const keepRuns = settings.outputMode === 'keep';
+  const stamp = keepRuns ? runStamp() : '';
+  const upscaledRoot = keepRuns ? path.join(paths.getUpscaledDir(), stamp) : paths.getUpscaledDir();
+  const compressedRoot = keepRuns ? path.join(paths.getCompressedDir(), stamp) : paths.getCompressedDir();
 
   const model = settings.upscaylModel || 'upscayl-standard-4x';
   const scale = String(settings.upscaylScale || '4');
@@ -193,8 +206,13 @@ async function runPipelineInner({ queue, settings }, send) {
   let gpuId = settings.upscaylGpu && settings.upscaylGpu !== 'auto' ? String(settings.upscaylGpu) : null;
   if (gpuId === null && doUpscale) gpuId = await gpu.resolveDedicatedGpuId();
 
-  if (doUpscale) clearDir(upscaledRoot);
-  if (doCompress) clearDir(compressedRoot);
+  if (keepRuns) {
+    if (doUpscale) paths.ensureDir(upscaledRoot);
+    if (doCompress) paths.ensureDir(compressedRoot);
+  } else {
+    if (doUpscale) clearDir(upscaledRoot);
+    if (doCompress) clearDir(compressedRoot);
+  }
 
   const folderEntries = [];
   const fileEntries = [];
@@ -270,20 +288,25 @@ async function runPipelineInner({ queue, settings }, send) {
         if (settings.upscaylTta) args.push('-x');
 
         const groupBase = upscaledCount;
+        // Two groups can share an output directory, so progress is measured
+        // against what was already there rather than the raw file count.
+        const preexisting = countImages(outDir);
         await runWithPolling(upscaylBin, args, path.dirname(upscaylBin), outDir, () => {
-          const done = Math.min(countImages(outDir), files.length);
+          const done = Math.min(Math.max(0, countImages(outDir) - preexisting), files.length);
           report({ stage: 'upscaling', status: 'running', message: `Upscaling ${groupBase + done} of ${totalImages}` }, groupBase + done);
         });
 
+        let produced = 0;
         files.forEach((f, i) => {
           const base = path.parse(f.name).name;
-          const produced = path.join(outDir, `${base}.${format}`);
-          if (!fs.existsSync(produced)) return;
+          const outPath = path.join(outDir, `${base}.${format}`);
+          if (!fs.existsSync(outPath)) return;
+          produced++;
           let finalName = `${base}.${format}`;
           if (template && template !== '{name}') {
             finalName = `${applyTemplate(template, { name: base, model, scale, index: groupBase + i + 1 })}.${format}`;
             const renamed = path.join(outDir, finalName);
-            try { if (renamed !== produced) fs.renameSync(produced, renamed); } catch { finalName = `${base}.${format}`; }
+            try { if (renamed !== outPath) fs.renameSync(outPath, renamed); } catch { finalName = `${base}.${format}`; }
           }
           manifest.push({
             original: f.abs,
@@ -293,7 +316,7 @@ async function runPipelineInner({ queue, settings }, send) {
           });
         });
 
-        upscaledCount = groupBase + countImages(outDir);
+        upscaledCount = groupBase + produced;
       }
     }
 
@@ -379,6 +402,11 @@ async function runPipelineInner({ queue, settings }, send) {
     upscaledCount: doUpscale ? upscaledCount : 0,
     compressedCount: doCompress ? compressedCount : 0,
     savedPct,
+    beforeSize,
+    afterSize,
+    durationMs: Date.now() - startTime,
+    upscaledDir: doUpscale ? upscaledRoot : '',
+    compressedDir: doCompress ? compressedRoot : '',
     results: manifest,
     logPath: state.logPath || '',
   };

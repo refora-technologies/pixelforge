@@ -32,7 +32,13 @@ const SETTINGS_MAP = [
   ['app.notifyOnComplete','notifyOnComplete',  () => true],
   ['app.soundOnComplete', 'soundOnComplete',   () => false],
   ['app.autoCheckUpdates','autoCheckUpdates',  () => true],
+  ['app.outputMode',      'outputMode',        () => 'replace'],
+  ['app.restoreSession',  'restoreSession',    () => false],
+  ['app.confirmOnExit',   'confirmOnExit',     () => true],
 ];
+
+// Keys that are app state rather than user preference — untouched by "reset to defaults".
+const PRESERVED_ON_RESET = new Set(['app.setupDone', 'app.inputQueue', 'app.gpuCache']);
 
 function getSettings() {
   const out = {};
@@ -49,4 +55,12 @@ function saveSettings(incoming) {
   return { ok: true };
 }
 
-module.exports = { getSettings, saveSettings, SETTINGS_MAP };
+function resetSettings() {
+  for (const [storeKey, , def] of SETTINGS_MAP) {
+    if (PRESERVED_ON_RESET.has(storeKey)) continue;
+    store.set(storeKey, def());
+  }
+  return getSettings();
+}
+
+module.exports = { getSettings, saveSettings, resetSettings, SETTINGS_MAP };
