@@ -1120,9 +1120,10 @@ function presentUpdate(result) {
   $('upd-dl-bar').style.width = '0%';
   $('upd-dl-pct').textContent = '0%';
 }
+const ALERT_KINDS = { error: 'error', success: 'success', warning: 'warning', info: 'info' };
 function showUpdateStatus(type, text) {
   $('upd-status-wrap').classList.remove('hidden');
-  $('upd-status').className = 'alert alert-' + (type === 'error' ? 'error' : type === 'success' ? 'success' : 'info');
+  $('upd-status').className = 'alert alert-' + (ALERT_KINDS[type] || 'info');
   $('upd-status-text').textContent = text;
 }
 async function doDownloadUpdate() {
@@ -1133,15 +1134,21 @@ async function doDownloadUpdate() {
     $('upd-dl-bar').style.width = (d.percent || 0) + '%';
     $('upd-dl-pct').textContent = (d.percent || 0) + '%';
   });
-  const res = await window.pixelforge.downloadUpdate({ assetUrl: lastUpdate.assetUrl, assetName: lastUpdate.assetName });
+  const res = await window.pixelforge.downloadUpdate({
+    assetUrl: lastUpdate.assetUrl,
+    assetName: lastUpdate.assetName,
+    checksumUrl: lastUpdate.checksumUrl,
+  });
   $('btn-download-update').disabled = false;
   if (res.success) {
     lastUpdate.path = res.path;
     $('upd-dl-bar').classList.add('done');
-    showUpdateStatus('success', 'Download complete. Run the installer to update.');
+    showUpdateStatus(res.verified ? 'success' : 'warning', res.verified
+      ? 'Download verified against its SHA-256 checksum. Run the installer to update.'
+      : 'Download complete, but this release published no checksum to verify it against.');
     $('btn-run-installer').classList.remove('hidden');
   } else {
-    showUpdateStatus('error', 'Download failed: ' + (res.error || 'unknown error'));
+    showUpdateStatus('error', res.error || 'Download failed.');
   }
 }
 function onUpdateAvailable(result) {

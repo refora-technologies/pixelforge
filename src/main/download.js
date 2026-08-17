@@ -12,7 +12,11 @@ function requestWithRedirects(url, onResponse, onError, depth = 0) {
   protocol.get(url, { headers: { 'User-Agent': 'PixelForge' } }, (res) => {
     if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
       res.resume();
-      requestWithRedirects(res.headers.location, onResponse, onError, depth + 1);
+      // Location may be relative — resolve it against the URL we just asked for.
+      let next;
+      try { next = new URL(res.headers.location, url).toString(); }
+      catch { onError(new Error('Invalid redirect target')); return; }
+      requestWithRedirects(next, onResponse, onError, depth + 1);
       return;
     }
     if (res.statusCode !== 200) {
@@ -54,6 +58,27 @@ function downloadFile(url, destPath, onProgress) {
       res.pipe(file);
     }, fail);
   });
+}
+
+function fetchText(url, maxBytes = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    requestWithRedirects(url, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        data += chunk;
+        if (data.length > maxBytes) { res.destroy(); reject(new Error('Response too large')); }
+      });
+      res.on('end', () => resolve(data));
+      res.on('error', reject);
+    }, reject);
+  });
+}
+
+// Accepts a bare digest or the usual "<digest>  <filename>" sha256sum layout.
+function parseSha256(text) {
+  const match = String(text || '').match(/\b[a-fA-F0-9]{64}\b/);
+  return match ? match[0].toLowerCase() : null;
 }
 
 function getGithubLatestRelease(owner, repo) {
@@ -123,6 +148,8 @@ async function verifyChecksum(filePath, expectedSha256) {
 
 module.exports = {
   downloadFile,
+  fetchText,
+  parseSha256,
   getGithubLatestRelease,
   findFileRecursive,
   isValidZip,

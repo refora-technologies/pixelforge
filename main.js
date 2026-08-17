@@ -241,10 +241,11 @@ ipcMain.handle('list-gpus', (_, opts) => gpu.listGpus(opts));
 
 // ── Updates ──
 ipcMain.handle('check-updates', () => updater.checkForUpdates());
-ipcMain.handle('download-update', async (_, { assetUrl, assetName }) => {
+ipcMain.handle('download-update', async (_, { assetUrl, assetName, checksumUrl }) => {
   try {
-    const dest = await updater.downloadUpdate(assetUrl, assetName, (pct) => send('update-progress', { percent: pct }));
-    return { success: true, path: dest };
+    const result = await updater.downloadUpdate(assetUrl, assetName, checksumUrl,
+      (pct) => send('update-progress', { percent: pct }));
+    return { success: true, path: result.path, verified: result.verified, sha256: result.sha256 || '' };
   } catch (err) {
     return { success: false, error: err.message };
   }

@@ -1,8 +1,9 @@
 'use strict';
 
 const { app } = require('electron');
+const fs = require('fs');
 const path = require('path');
-const { getGithubLatestRelease, downloadFile } = require('./download');
+const { getGithubLatestRelease, downloadFile, fetchText, parseSha256, sha256File } = require('./download');
 
 const REPO_OWNER = 'refora-technologies';
 const REPO_NAME = 'pixelforge';
@@ -29,8 +30,11 @@ async function checkForUpdates() {
   try {
     const rel = await getGithubLatestRelease(REPO_OWNER, REPO_NAME);
     const latest = (rel.tag_name || rel.name || '').replace(/^v/i, '');
-    const asset = rel.assets?.find(a => /\.exe$/i.test(a.name) && /setup/i.test(a.name))
-               || rel.assets?.find(a => /\.exe$/i.test(a.name));
+    const assets = rel.assets || [];
+    const asset = assets.find(a => /\.exe$/i.test(a.name) && /setup/i.test(a.name))
+               || assets.find(a => /\.exe$/i.test(a.name));
+    // Published alongside the installer as "<installer>.sha256".
+    const checksum = asset && assets.find(a => a.name.toLowerCase() === `${asset.name.toLowerCase()}.sha256`);
     return {
       ok: true,
       current,
@@ -38,6 +42,7 @@ async function checkForUpdates() {
       hasUpdate: latest ? isNewer(latest, current) : false,
       assetUrl: asset?.browser_download_url || '',
       assetName: asset?.name || '',
+      checksumUrl: checksum?.browser_download_url || '',
       htmlUrl: rel.html_url || `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases`,
       notes: rel.body || '',
     };
@@ -46,12 +51,29 @@ async function checkForUpdates() {
   }
 }
 
-async function downloadUpdate(assetUrl, assetName, onProgress) {
+// Downloads the installer and, when the release publishes a .sha256 next to it,
+// refuses to hand back anything whose digest doesn't match.
+async function downloadUpdate(assetUrl, assetName, checksumUrl, onProgress) {
   if (!assetUrl) throw new Error('No download URL available.');
-  const downloadsDir = app.getPath('downloads');
-  const dest = path.join(downloadsDir, assetName || 'PixelForge-Setup.exe');
+  const dest = path.join(app.getPath('downloads'), assetName || 'PixelForge-Setup.exe');
   await downloadFile(assetUrl, dest, onProgress);
-  return dest;
+
+  if (!checksumUrl) return { path: dest, verified: false };
+
+  let expected;
+  try {
+    expected = parseSha256(await fetchText(checksumUrl));
+  } catch {
+    expected = null;
+  }
+  if (!expected) return { path: dest, verified: false };
+
+  const actual = await sha256File(dest);
+  if (actual !== expected) {
+    try { fs.unlinkSync(dest); } catch {}
+    throw new Error('Checksum mismatch — the download was discarded. Please try again or download from GitHub.');
+  }
+  return { path: dest, verified: true, sha256: actual };
 }
 
 module.exports = { checkForUpdates, downloadUpdate, isNewer };
