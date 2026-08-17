@@ -32,11 +32,13 @@ All processing is 100% local. No cloud, no accounts, and no internet required af
 - **GPU-accelerated** — Vulkan-powered inference via upscayl-ncnn (NVIDIA, AMD, Intel), with automatic priority for the dedicated GPU.
 - **Batch processing with live progress** — exact per-image counters, elapsed time, and ETA.
 - **Pause, resume, and cancel** — stop or hold a batch safely between images.
-- **Input queue** — line up multiple folders and images in a single run.
+- **Input queue** — line up multiple folders and images in a single run, and remove any of them individually.
+- **Keep or replace previous results** — send every run to its own timestamped folder, or overwrite the last one.
 - **Recursive scanning** — optionally include subfolders and preserve their structure in the output.
 - **Before / after preview** — inspect results in a gallery with a side-by-side comparison slider.
 - **Custom output naming** — rename outputs with templates such as `{name}`, `{model}`, `{scale}`.
 - **Light and dark themes** with a customizable accent color.
+- **Keyboard shortcuts** for adding inputs, starting a run, and moving between pages.
 - **Desktop notifications** when a batch finishes.
 - **Built-in update checker** — checks GitHub for new releases and downloads them in-app.
 - **100% offline and private** — zero telemetry, zero cloud, zero accounts.
