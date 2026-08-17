@@ -33,3 +33,6 @@ yarn-error.log*
 # Temp
 *.tmp
 *.temp
+
+# Captures from tools/shoot.js
+shots/
