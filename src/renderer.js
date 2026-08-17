@@ -5,14 +5,18 @@ let pathCounts = {};
 let scannedImages = [];
 const IMG_EXT_RE = /\.(jpg|jpeg|png|webp|bmp|tiff|tif)$/i;
 const isImagePath = (p) => IMG_EXT_RE.test(p);
+const GALLERY_LIMIT = 120;
 let pipelineRunning = false;
 let pipelineMode = 'both';
+let outputMode = 'replace';
 let settings = {};
 let appPaths = {};
 let lastResults = [];
+let lastRunDir = '';
 let lastUpdate = null;
 let pipelineStart = 0;
 let elapsedTimer = null;
+let scanToken = 0;
 
 const $ = (id) => document.getElementById(id);
 const numFmt = (n) => Number(n).toLocaleString();
@@ -50,41 +54,63 @@ function log(text, cls = '') {
   box.scrollTop = box.scrollHeight;
 }
 
+// ─── Toasts ─────────────────────────────────────────────────────────────────
+function toast(message, type = 'info', ms = 3400) {
+  const stack = $('toast-stack');
+  if (!stack) return;
+  const icon = type === 'success' ? '#ic-check' : type === 'error' ? '#ic-warn' : '#ic-info';
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = `<span class="toast-icon"><svg width="15" height="15"><use href="${icon}"/></svg></span><span class="toast-text"></span>`;
+  el.querySelector('.toast-text').textContent = message;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 240);
+  }, ms);
+}
+
 // ─── Init ───────────────────────────────────────────────────────────────────
+// Wiring happens before any data loads so the window is interactive
+// immediately — model and GPU lookups can take seconds and must not block it.
 async function init() {
-  settings = await window.pixelforge.getSettings();
-  appPaths = await window.pixelforge.getAppPaths();
-
-  applyTheme(settings.theme || 'dark');
-  applyAccentColor(settings.accentColor || '#6366f1');
-  pipelineMode = settings.pipelineMode || 'both';
-  updateOutputPathDisplays();
-
-  const version = await window.pixelforge.getAppVersion();
-  $('sidebar-version').textContent = `PixelForge v${version}`;
-  $('about-version').textContent = `v${version}`;
-  $('upd-current').textContent = `v${version}`;
-
-  if (Array.isArray(settings.savedInputQueue) && settings.savedInputQueue.length) addPaths(settings.savedInputQueue, true);
-
-  await loadModels(settings.upscaylModel);
-  await loadGpus(settings.upscaylGpu);
-  populateSettingsForm();
-  setMode(pipelineMode);
-
   wireTitlebar();
   wireNav();
   wireDashboard();
   wireSettings();
   wireUpdates();
   wireCompareModal();
+  wireShortcuts();
+  wireExternalLinks();
 
   window.pixelforge.onPipelineProgress(onPipelineProgress);
   window.pixelforge.onPipelineDone(onPipelineDone);
   window.pixelforge.onUpdateAvailable(onUpdateAvailable);
   window.pixelforge.onMaximizedChanged(setMaximizeIcon);
 
-  await runSetupCheck(false);
+  settings = await window.pixelforge.getSettings();
+  applyTheme(settings.theme || 'dark');
+  applyAccentColor(settings.accentColor || '#6366f1');
+  pipelineMode = settings.pipelineMode || 'both';
+  outputMode = settings.outputMode === 'keep' ? 'keep' : 'replace';
+  populateSettingsForm();
+  setMode(pipelineMode);
+  setOutputMode(outputMode);
+
+  if (settings.restoreSession && Array.isArray(settings.savedInputQueue) && settings.savedInputQueue.length) {
+    addPaths(settings.savedInputQueue, true);
+  }
+
+  runSetupCheck(false);
+
+  window.pixelforge.getAppPaths().then(p => { appPaths = p; updateOutputPathDisplays(); });
+  window.pixelforge.getAppVersion().then(v => {
+    $('sidebar-version').textContent = `PixelForge v${v}`;
+    $('about-version').textContent = `v${v}`;
+    $('upd-current').textContent = `v${v}`;
+  });
+  loadModels(settings.upscaylModel);
+  loadGpus(settings.upscaylGpu);
 }
 
 // ─── Titlebar / nav ─────────────────────────────────────────────────────────
@@ -101,6 +127,9 @@ function setMaximizeIcon(isMax) {
 function wireNav() {
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', () => navigateTo(item.dataset.page));
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(item.dataset.page); }
+    });
   });
 }
 function navigateTo(page) {
@@ -108,12 +137,37 @@ function navigateTo(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
   $(`page-${page}`)?.classList.add('active');
+  $('content').scrollTop = 0;
+}
+function wireExternalLinks() {
+  document.querySelectorAll('[data-link]').forEach(el => {
+    el.addEventListener('click', () => window.pixelforge.openExternal(el.dataset.link));
+  });
+}
+function wireShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('compare-modal').classList.contains('hidden')) {
+      closeCompare();
+      return;
+    }
+    if (!e.ctrlKey || e.altKey || e.shiftKey) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+    const key = e.key.toLowerCase();
+    if (key === 'enter') { e.preventDefault(); if (!$('btn-start').disabled) onStartPipeline(); }
+    else if (key === 'o' && !typing) { e.preventDefault(); onBrowse(); }
+    else if (key === 'i' && !typing) { e.preventDefault(); onAddImages(); }
+    else if (key === '1') { e.preventDefault(); navigateTo('dashboard'); }
+    else if (key === '2') { e.preventDefault(); navigateTo('settings'); }
+    else if (key === '3') { e.preventDefault(); navigateTo('about'); }
+  });
 }
 
 // ─── Theme / accent ─────────────────────────────────────────────────────────
 function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
-  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  const value = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', value);
+  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === value));
+  try { localStorage.setItem('pf.theme', value); } catch {}
 }
 function applyAccentColor(hex) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -123,6 +177,7 @@ function applyAccentColor(hex) {
   root.setProperty('--accent-muted', `rgba(${r},${g},${b},0.12)`);
   root.setProperty('--accent-glow', `rgba(${r},${g},${b},0.18)`);
   root.setProperty('--border-accent', `rgba(${r},${g},${b},0.4)`);
+  try { localStorage.setItem('pf.accent', hex); } catch {}
 }
 function shadeHex(hex, amt) {
   const c = [1, 3, 5].map(i => Math.min(255, Math.max(0, parseInt(hex.slice(i, i + 2), 16) + amt)));
@@ -146,23 +201,29 @@ async function loadModels(currentModel) {
     if (!sel.value && sel.options.length) sel.selectedIndex = 0;
   } catch (e) { console.error('loadModels', e); }
 }
-async function loadGpus(currentGpu) {
+
+// "auto" stays selected rather than being silently rewritten to a device id —
+// the main process resolves the dedicated GPU at run time.
+async function loadGpus(currentGpu, opts) {
   const sel = $('set-upscayl-gpu');
   if (!sel) return;
   try {
-    const gpus = await window.pixelforge.listGpus();
-    sel.innerHTML = '<option value="auto">Auto-detect (Recommended)</option>';
-    let dedicated = null;
+    const gpus = await window.pixelforge.listGpus(opts);
+    const dedicated = gpus.find(g => !g.isIntegrated);
+    sel.innerHTML = '';
+    const auto = document.createElement('option');
+    auto.value = 'auto';
+    auto.textContent = dedicated ? `Auto-detect — ${dedicated.name}` : 'Auto-detect (Recommended)';
+    sel.appendChild(auto);
     for (const g of gpus) {
       const opt = document.createElement('option');
       opt.value = g.id;
       opt.textContent = `GPU ${g.id}: ${g.name}${g.vramLabel ? ' (' + g.vramLabel + ')' : ''}${g.isIntegrated ? ' — Integrated' : ' — Dedicated'}`;
       sel.appendChild(opt);
-      if (!g.isIntegrated && dedicated === null) dedicated = g.id;
     }
-    if (currentGpu && currentGpu !== 'auto') sel.value = currentGpu;
-    else if (dedicated !== null) { sel.value = dedicated; await window.pixelforge.saveSettings({ upscaylGpu: dedicated }); }
-  } catch (e) { console.error('loadGpus', e); }
+    sel.value = currentGpu && gpus.some(g => g.id === String(currentGpu)) ? String(currentGpu) : 'auto';
+    return gpus;
+  } catch (e) { console.error('loadGpus', e); return []; }
 }
 
 // ─── Setup overlay ──────────────────────────────────────────────────────────
@@ -218,8 +279,8 @@ function hideSetupOverlay() {
   window.pixelforge.saveSettings({ setupDone: true });
   window.pixelforge.getSettings().then(async s => {
     settings = s;
-    await loadModels(s.upscaylModel);
-    await loadGpus(s.upscaylGpu);
+    loadModels(s.upscaylModel);
+    loadGpus(s.upscaylGpu);
   });
   window.pixelforge.getAppPaths().then(p => { appPaths = p; updateOutputPathDisplays(); });
   window.pixelforge.checkSetup().then(r => {
@@ -274,12 +335,17 @@ function wireDashboard() {
   $('btn-browse').addEventListener('click', onBrowse);
   $('btn-browse-files').addEventListener('click', onAddImages);
   $('btn-scan').addEventListener('click', scanAll);
+  $('btn-clear-queue').addEventListener('click', clearQueue);
   $('btn-start').addEventListener('click', onStartPipeline);
   $('btn-pause').addEventListener('click', onPause);
   $('btn-resume').addEventListener('click', onResume);
   $('btn-cancel').addEventListener('click', onCancel);
   $('btn-open-upscaled').addEventListener('click', () => window.pixelforge.openFolder(appPaths.upscaled));
   $('btn-open-compressed').addEventListener('click', () => window.pixelforge.openFolder(appPaths.compressed));
+  $('btn-open-run').addEventListener('click', () => {
+    const target = lastRunDir || appPaths.compressed || appPaths.upscaled;
+    if (target) window.pixelforge.openFolder(target);
+  });
 
   document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => {
     setMode(b.dataset.mode);
@@ -297,6 +363,14 @@ function setMode(mode) {
   document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
 
+function setOutputMode(mode) {
+  outputMode = mode === 'keep' ? 'keep' : 'replace';
+  document.querySelectorAll('#output-mode-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.outmode === outputMode));
+  $('output-mode-desc').textContent = outputMode === 'keep'
+    ? 'Every run lands in its own timestamped folder'
+    : 'Each run replaces the last one';
+}
+
 async function onBrowse() {
   const folders = await window.pixelforge.selectFolders();
   if (folders && folders.length) addPaths(folders, true);
@@ -310,24 +384,30 @@ function onDrop(e) {
   $('dropzone').classList.remove('dragover');
   const items = e.dataTransfer.items;
   const dropped = [];
+  let rejected = 0;
   for (let i = 0; i < e.dataTransfer.files.length; i++) {
     const p = e.dataTransfer.files[i].path;
     if (!p) continue;
     const entry = items[i] && items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
     if (entry && entry.isDirectory) dropped.push(p);
     else if (isImagePath(p)) dropped.push(p);
+    else rejected++;
   }
-  addPaths(dropped, true);
+  if (rejected) toast(`Skipped ${rejected} unsupported file${rejected !== 1 ? 's' : ''}`, 'info');
+  if (dropped.length) addPaths(dropped, true);
 }
 
 function persistQueue() {
-  window.pixelforge.saveSettings({ savedInputQueue: queue.slice() });
+  // Only remembered when the user opted in — otherwise every launch is clean.
+  window.pixelforge.saveSettings({ savedInputQueue: settings.restoreSession ? queue.slice() : [] });
 }
 function addPaths(items, doScan = true) {
-  for (const p of items) if (p && !queue.includes(p)) queue.push(p);
+  let added = 0;
+  for (const p of items) if (p && !queue.includes(p)) { queue.push(p); added++; }
   renderQueue();
   updateInputDisplay();
   persistQueue();
+  if (items.length && !added) toast('Already in the queue', 'info');
   if (doScan) scanAll();
 }
 function removePath(target) {
@@ -336,6 +416,18 @@ function removePath(target) {
   updateInputDisplay();
   persistQueue();
   scanAll();
+}
+function clearQueue() {
+  if (!queue.length) return;
+  const n = queue.length;
+  queue = [];
+  pathCounts = {};
+  scannedImages = [];
+  renderQueue();
+  updateInputDisplay();
+  persistQueue();
+  scanAll();
+  toast(`Cleared ${n} item${n !== 1 ? 's' : ''}`, 'success');
 }
 function updateInputDisplay() {
   const el = $('input-path-display');
@@ -346,21 +438,23 @@ function updateInputDisplay() {
 }
 function renderQueue() {
   const card = $('queue-card'), list = $('queue-list');
-  if (queue.length <= 1) { card.classList.add('hidden'); list.innerHTML = ''; return; }
+  if (!queue.length) { card.classList.add('hidden'); list.innerHTML = ''; return; }
   card.classList.remove('hidden');
+  $('queue-count').textContent = `${queue.length} item${queue.length !== 1 ? 's' : ''}`;
   list.innerHTML = '';
   for (const p of queue) {
     const isFile = isImagePath(p);
     const name = p.replace(/[\\/]$/, '').split(/[\\/]/).pop();
     const count = pathCounts[p];
-    const meta = isFile ? 'Image' : `Folder${count !== undefined ? ` · ${count} images` : ''}`;
+    const meta = isFile ? 'Image' : `Folder${count !== undefined ? ` · ${count} image${count !== 1 ? 's' : ''}` : ''}`;
     const item = document.createElement('div');
-    item.className = 'queue-item';
+    item.className = 'queue-item' + (!isFile && count === 0 ? ' is-empty' : '');
+    item.title = p;
     item.innerHTML =
       `<span class="queue-item-icon"><svg width="16" height="16"><use href="#${isFile ? 'ic-image' : 'ic-folder'}"/></svg></span>` +
       `<div class="queue-item-info"><div class="queue-item-name">${escapeHtml(name)}</div>` +
       `<div class="queue-item-meta">${escapeHtml(meta)}</div></div>` +
-      `<button class="queue-item-remove" title="Remove"><svg width="14" height="14"><use href="#ic-trash"/></svg></button>`;
+      `<button class="queue-item-remove" title="Remove from queue"><svg width="14" height="14"><use href="#ic-trash"/></svg></button>`;
     item.querySelector('.queue-item-remove').addEventListener('click', () => removePath(p));
     list.appendChild(item);
   }
@@ -368,17 +462,31 @@ function renderQueue() {
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 async function scanAll() {
-  if (!queue.length) { $('scan-results-card').classList.add('hidden'); $('btn-start').disabled = true; $('stats-row').classList.add('hidden'); return; }
+  if (!queue.length) {
+    scannedImages = [];
+    $('scan-results-card').classList.add('hidden');
+    $('btn-start').disabled = true;
+    $('stats-row').classList.add('hidden');
+    return;
+  }
   const btn = $('btn-scan');
+  const token = ++scanToken;
   btn.disabled = true;
   const r = await window.pixelforge.scanInputs(queue, settings.recursive);
+  if (token !== scanToken) return;
   pathCounts = r.perPath || {};
   const all = r.images || [];
   scannedImages = all;
   btn.disabled = false;
   renderQueue();
 
-  if (!all.length) { $('scan-results-card').classList.add('hidden'); $('btn-start').disabled = true; $('stats-row').classList.add('hidden'); return; }
+  if (!all.length) {
+    $('scan-results-card').classList.add('hidden');
+    $('btn-start').disabled = true;
+    $('stats-row').classList.add('hidden');
+    toast('No supported images found in the selection', 'error');
+    return;
+  }
 
   $('scan-count').textContent = numFmt(all.length);
   const totalSize = all.reduce((a, img) => a + img.size, 0);
@@ -412,9 +520,17 @@ async function onStartPipeline() {
   try {
     const s = await window.pixelforge.getSettings();
     s.pipelineMode = pipelineMode;
-    await window.pixelforge.startPipeline({ queue, settings: s });
+    const result = await window.pixelforge.startPipeline({ queue, settings: s });
+    // pipelineRunning is still true only when no progress event reported the
+    // failure first — otherwise this would surface the same error twice.
+    if (result && !result.success && !result.cancelled && pipelineRunning) {
+      log('Error: ' + (result.error || 'Unknown error'), 'log-err');
+      toast(result.error || 'Pipeline failed', 'error', 6000);
+      finishRun('error');
+    }
   } catch (err) {
     log('Error: ' + err.message, 'log-err');
+    toast(err.message, 'error', 6000);
     finishRun('error');
   }
 }
@@ -428,6 +544,8 @@ function setRunningUI(running, paused) {
   $('btn-pause').classList.toggle('hidden', !running || paused);
   $('btn-resume').classList.toggle('hidden', !running || !paused);
   $('btn-cancel').classList.toggle('hidden', !running);
+  $('btn-clear-queue').disabled = running;
+  $('btn-scan').disabled = running || !queue.length;
 }
 
 function onPipelineProgress(data) {
@@ -453,10 +571,12 @@ function onPipelineProgress(data) {
     setStage('compressing', 0, 'Cancelled', 'cancelled');
     setBadge('pipeline-status-badge', 'cancelled', 'Cancelled');
     log('Pipeline cancelled.', 'log-warn');
+    toast('Pipeline cancelled', 'info');
     finishRun('cancelled');
   } else if (stage === 'error') {
     setBadge('pipeline-status-badge', 'error', 'Error');
     log('Error: ' + message, 'log-err');
+    toast(message, 'error', 6000);
     finishRun('error');
   }
 }
@@ -464,8 +584,13 @@ function onPipelineProgress(data) {
 function onPipelineDone(result) {
   finishRun('done');
   lastResults = result.results || [];
+  lastRunDir = result.compressedDir || result.upscaledDir || '';
   updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, result.savedPct);
   renderGallery(lastResults);
+
+  const done = result.compressedCount || result.upscaledCount || 0;
+  const saved = result.savedPct ? ` · saved ${result.savedPct}%` : '';
+  toast(`Finished ${done} image${done !== 1 ? 's' : ''} in ${fmtDuration(result.durationMs)}${saved}`, 'success', 5200);
   if (settings.soundOnComplete) playChime();
 }
 
@@ -529,12 +654,13 @@ function updateOutputPathDisplays() {
 // ─── Gallery + compare ──────────────────────────────────────────────────────
 function renderGallery(results) {
   const grid = $('gallery-grid');
+  const more = $('gallery-more');
   grid.innerHTML = '';
   const items = (results || []).filter(r => r.upscaled || r.compressed);
   if (!items.length) { $('results-card').classList.add('hidden'); return; }
   $('results-card').classList.remove('hidden');
 
-  for (const r of items.slice(0, 120)) {
+  for (const r of items.slice(0, GALLERY_LIMIT)) {
     const thumb = r.compressed || r.upscaled || r.original;
     const openTarget = r.compressed || r.upscaled;
     const name = String(thumb).split(/[\\/]/).pop();
@@ -542,6 +668,7 @@ function renderGallery(results) {
 
     const tile = document.createElement('div');
     tile.className = 'gallery-tile';
+    tile.title = name;
     tile.innerHTML =
       `<img loading="lazy" src="${fileUrl(thumb)}" alt=""/>` +
       `<div class="gallery-tile-overlay"><div class="gallery-tile-name">${escapeHtml(name)}</div>` +
@@ -558,23 +685,37 @@ function renderGallery(results) {
     tile.addEventListener('click', () => canCompare ? openCompare(r.original, r.upscaled, name) : window.pixelforge.openFile(openTarget));
     grid.appendChild(tile);
   }
+
+  if (items.length > GALLERY_LIMIT) {
+    more.textContent = `Showing the first ${GALLERY_LIMIT} of ${numFmt(items.length)} results — open the output folder to see them all.`;
+    more.classList.remove('hidden');
+  } else {
+    more.classList.add('hidden');
+  }
 }
 
 function wireCompareModal() {
-  $('compare-close').addEventListener('click', () => $('compare-modal').classList.add('hidden'));
-  $('compare-modal').addEventListener('click', (e) => { if (e.target.id === 'compare-modal') $('compare-modal').classList.add('hidden'); });
+  $('compare-close').addEventListener('click', closeCompare);
+  $('compare-modal').addEventListener('click', (e) => { if (e.target.id === 'compare-modal') closeCompare(); });
   $('cmp-range').addEventListener('input', (e) => setCmpPos(parseFloat(e.target.value)));
 }
+// The base image fills the frame and shows through on the right; the clipped
+// overlay sits on top and reveals the left-hand side.
 function openCompare(original, upscaled, name) {
   $('compare-title').textContent = name ? `Before / After — ${name}` : 'Before / After';
-  $('cmp-before-img').src = fileUrl(upscaled);
-  $('cmp-after-img').src = fileUrl(original);
+  $('cmp-img-base').src = fileUrl(upscaled);
+  $('cmp-img-overlay').src = fileUrl(original);
   setCmpPos(50);
   $('compare-modal').classList.remove('hidden');
 }
+function closeCompare() {
+  $('compare-modal').classList.add('hidden');
+  $('cmp-img-base').src = '';
+  $('cmp-img-overlay').src = '';
+}
 function setCmpPos(p) {
   p = Math.min(100, Math.max(0, p));
-  $('cmp-after').style.clipPath = `inset(0 ${100 - p}% 0 0)`;
+  $('cmp-clip').style.clipPath = `inset(0 ${100 - p}% 0 0)`;
   $('cmp-divider').style.left = p + '%';
   $('cmp-handle').style.left = p + '%';
   $('cmp-range').value = p;
@@ -605,6 +746,7 @@ function wireSettings() {
   $('set-caesium-quality').addEventListener('input', () => { $('set-caesium-quality-val').textContent = $('set-caesium-quality').value; });
   $('set-accent-color').addEventListener('input', () => { const v = $('set-accent-color').value; $('set-accent-preview').textContent = v; applyAccentColor(v); });
   document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.theme)));
+  document.querySelectorAll('#output-mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => setOutputMode(b.dataset.outmode)));
   $('set-recursive').addEventListener('change', () => { settings.recursive = $('set-recursive').checked; });
 
   const browse = (btnId, inputId, isFolder) => $(btnId).addEventListener('click', async () => {
@@ -619,7 +761,34 @@ function wireSettings() {
 
   $('btn-rerun-setup').addEventListener('click', () => showSetupOverlay(true));
   $('btn-open-logs').addEventListener('click', () => window.pixelforge.openLogs());
+  $('btn-refresh-gpus').addEventListener('click', onRefreshGpus);
+  $('btn-reset-settings').addEventListener('click', onResetSettings);
+  $('btn-about-updates').addEventListener('click', () => { navigateTo('settings'); doCheckUpdates(true); });
 }
+
+async function onRefreshGpus() {
+  const btn = $('btn-refresh-gpus');
+  btn.disabled = true;
+  const gpus = await loadGpus($('set-upscayl-gpu').value, { force: true });
+  btn.disabled = false;
+  toast(gpus.length ? `Detected ${gpus.length} GPU${gpus.length !== 1 ? 's' : ''}` : 'No GPUs detected', gpus.length ? 'success' : 'error');
+}
+
+async function onResetSettings() {
+  if (!window.confirm('Reset all settings to their defaults?\n\nYour input queue and installed dependencies are not affected.')) return;
+  settings = await window.pixelforge.resetSettings();
+  applyTheme(settings.theme);
+  applyAccentColor(settings.accentColor);
+  setMode(settings.pipelineMode || 'both');
+  setOutputMode(settings.outputMode);
+  populateSettingsForm();
+  await loadModels(settings.upscaylModel);
+  await loadGpus(settings.upscaylGpu);
+  appPaths = await window.pixelforge.getAppPaths();
+  updateOutputPathDisplays();
+  toast('Settings reset to defaults', 'success');
+}
+
 function populateSettingsForm() {
   $('set-upscayl-scale').value = settings.upscaylScale || '4';
   $('set-upscayl-format').value = settings.upscaylFormat || 'png';
@@ -640,12 +809,16 @@ function populateSettingsForm() {
   $('set-notify').checked = settings.notifyOnComplete !== false;
   $('set-sound').checked = !!settings.soundOnComplete;
   $('set-autoupdate').checked = settings.autoCheckUpdates !== false;
+  $('set-restore-session').checked = !!settings.restoreSession;
+  $('set-confirm-exit').checked = settings.confirmOnExit !== false;
   const accent = settings.accentColor || '#6366f1';
   $('set-accent-color').value = accent;
   $('set-accent-preview').textContent = accent;
 }
+
 async function onSaveSettings() {
   const theme = document.querySelector('#theme-seg .seg-btn.active')?.dataset.theme || 'dark';
+  const recursiveChanged = !!settings.recursive !== $('set-recursive').checked;
   const s = {
     upscaylModel: $('set-upscayl-model').value,
     upscaylScale: $('set-upscayl-scale').value,
@@ -669,23 +842,28 @@ async function onSaveSettings() {
     notifyOnComplete: $('set-notify').checked,
     soundOnComplete: $('set-sound').checked,
     autoCheckUpdates: $('set-autoupdate').checked,
+    outputMode,
+    restoreSession: $('set-restore-session').checked,
+    confirmOnExit: $('set-confirm-exit').checked,
   };
   await window.pixelforge.saveSettings(s);
   settings = { ...settings, ...s };
+  persistQueue();
   appPaths = await window.pixelforge.getAppPaths();
   updateOutputPathDisplays();
+  if (recursiveChanged && queue.length) scanAll();
 
   const btn = $('btn-save-settings');
   const orig = btn.innerHTML;
   btn.innerHTML = '<svg width="13" height="13"><use href="#ic-check"/></svg> Saved';
   btn.disabled = true;
   setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1600);
+  toast('Settings saved', 'success');
 }
 
 // ─── Updates ────────────────────────────────────────────────────────────────
 function wireUpdates() {
   $('btn-check-updates').addEventListener('click', () => doCheckUpdates(true));
-  $('btn-about-check').addEventListener('click', () => { navigateTo('settings'); doCheckUpdates(true); });
   $('btn-download-update').addEventListener('click', doDownloadUpdate);
   $('btn-run-installer').addEventListener('click', () => lastUpdate?.path && window.pixelforge.runInstaller(lastUpdate.path));
   $('update-banner-dismiss').addEventListener('click', () => $('update-banner').classList.add('hidden'));
@@ -695,21 +873,17 @@ async function doCheckUpdates(showStatus) {
   const btn = $('btn-check-updates');
   const icon = btn.querySelector('svg');
   if (icon) icon.classList.add('spin');
-  $('about-update-state').textContent = 'Checking…';
   const result = await window.pixelforge.checkUpdates();
   if (icon) icon.classList.remove('spin');
 
   if (!result.ok) {
-    $('about-update-state').textContent = 'Check failed';
     if (showStatus) showUpdateStatus('error', 'Could not check for updates: ' + (result.error || 'network error'));
     return;
   }
   lastUpdate = result;
   if (result.hasUpdate) {
-    $('about-update-state').textContent = `v${result.latest} available`;
     presentUpdate(result);
   } else {
-    $('about-update-state').textContent = 'Up to date';
     if (showStatus) showUpdateStatus('success', `You're on the latest version (v${result.current}).`);
     $('upd-download-wrap').classList.add('hidden');
   }
@@ -749,7 +923,6 @@ async function doDownloadUpdate() {
 }
 function onUpdateAvailable(result) {
   lastUpdate = result;
-  $('about-update-state').textContent = `v${result.latest} available`;
   $('update-banner-title').textContent = `PixelForge ${result.latest} is available`;
   $('update-banner-sub').textContent = `You're on v${result.current}. Update from Settings.`;
   $('update-banner').classList.remove('hidden');

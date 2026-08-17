@@ -220,13 +220,16 @@ body {
 .folder-display { flex: 1; padding: 9px 12px; background: var(--inset); border: 1px solid var(--border-1); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: border-color var(--transition); }
 .folder-display.filled { color: var(--text-2); border-color: var(--border-2); }
 .dz-hint { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; font-size: 12px; color: var(--text-3); }
-.remember-row { display: flex; align-items: center; gap: 7px; margin-top: 12px; cursor: pointer; }
-.remember-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; }
-.remember-row span { font-size: 12px; color: var(--text-3); }
+.dropzone.dragover .dz-hint { color: var(--accent-soft); }
 
 /* ─── Queue ─────────────────────────────────────────────────────────────────── */
-.queue-list { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
-.queue-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface-1); border: 1px solid var(--border-1); border-radius: var(--radius-sm); }
+.count-chip { padding: 2px 8px; border-radius: 20px; background: var(--accent-muted); border: 1px solid rgba(99,102,241,0.22); font-size: 10.5px; font-weight: 700; color: var(--accent-soft); font-variant-numeric: tabular-nums; }
+.queue-list { display: flex; flex-direction: column; gap: 7px; max-height: 232px; overflow-y: auto; }
+.queue-list::-webkit-scrollbar { width: 4px; }
+.queue-list::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+.queue-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--surface-1); border: 1px solid var(--border-1); border-radius: var(--radius-sm); transition: border-color var(--transition); }
+.queue-item:hover { border-color: var(--border-2); }
+.queue-item.is-empty { border-color: rgba(245,158,11,0.3); background: var(--yellow-muted); }
 .queue-item-icon { color: var(--accent-soft); flex-shrink: 0; }
 .queue-item-info { flex: 1; min-width: 0; }
 .queue-item-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -313,6 +316,7 @@ body {
 .gallery-actions { display: flex; gap: 6px; }
 .gallery-action { width: 28px; height: 28px; border: none; border-radius: 6px; background: rgba(255,255,255,0.16); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); transition: background var(--transition); }
 .gallery-action:hover { background: var(--accent); }
+.gallery-more { text-align: center; font-size: 11.5px; color: var(--text-3); padding-top: 13px; margin-top: 13px; border-top: 1px solid var(--border-1); }
 
 /* ─── Compare modal ─────────────────────────────────────────────────────────── */
 .modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: rgba(5,7,16,0.85); backdrop-filter: blur(14px); }
@@ -324,8 +328,8 @@ body {
 
 .cmp { position: relative; width: 100%; border-radius: var(--radius-md); overflow: hidden; background: var(--inset); max-height: 62vh; }
 .cmp img { display: block; width: 100%; height: auto; max-height: 62vh; object-fit: contain; }
-.cmp-after { position: absolute; inset: 0; overflow: hidden; }
-.cmp-after img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cmp-clip { position: absolute; inset: 0; overflow: hidden; }
+.cmp-clip img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .cmp-divider { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); pointer-events: none; transform: translateX(-1px); }
 .cmp-handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 32px; height: 32px; border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; color: var(--accent); pointer-events: none; }
 .cmp-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; -webkit-appearance: none; appearance: none; background: transparent; }
@@ -449,6 +453,40 @@ body {
 .stack-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-1); color: var(--text-2); }
 .stack-table tr:last-child td { border-bottom: none; }
 .stack-table td:first-child { font-weight: 600; color: var(--text-1); }
+
+/* ─── Toasts ────────────────────────────────────────────────────────────────── */
+#toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 400; display: flex; flex-direction: column; gap: 9px; align-items: flex-end; pointer-events: none; }
+.toast {
+  display: flex; align-items: center; gap: 10px; padding: 11px 15px;
+  border-radius: var(--radius-md); background: var(--bg-2);
+  border: 1px solid var(--border-2); box-shadow: var(--shadow-lg);
+  font-size: 12.5px; font-weight: 600; color: var(--text-1);
+  max-width: 340px; pointer-events: auto;
+  animation: toast-in 0.26s var(--ease);
+}
+.toast.leaving { animation: toast-out 0.22s var(--ease) forwards; }
+.toast-icon { flex-shrink: 0; display: flex; }
+.toast.success { border-color: rgba(34,197,94,0.35); }
+.toast.success .toast-icon { color: var(--green); }
+.toast.error { border-color: rgba(244,63,94,0.35); }
+.toast.error .toast-icon { color: var(--red); }
+.toast.info .toast-icon { color: var(--accent-soft); }
+@keyframes toast-in { from { opacity: 0; transform: translateX(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(16px) scale(0.97); } }
+
+/* ─── Keyboard keys ─────────────────────────────────────────────────────────── */
+kbd {
+  display: inline-block; padding: 2px 6px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-bottom-width: 2px; font-family: var(--mono); font-size: 10.5px;
+  font-weight: 600; color: var(--text-1); line-height: 1.5;
+}
+
+/* ─── Focus ring ────────────────────────────────────────────────────────────── */
+.btn:focus-visible, .seg-btn:focus-visible, .nav-item:focus-visible,
+.ctrl-select:focus-visible, .ctrl-input:focus-visible, .btn-start:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 /* ─── Utilities ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

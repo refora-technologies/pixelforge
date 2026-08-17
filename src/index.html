@@ -6,6 +6,16 @@
   <title>PixelForge — Refora Technologies</title>
   <meta name="description" content="AI-powered image upscaling and compression automation by Refora Technologies."/>
   <link rel="stylesheet" href="style.css"/>
+  <script>
+    // Settings live in the main process, so mirror theme + accent locally and
+    // apply them before first paint to avoid a flash of the wrong theme.
+    try {
+      var t = localStorage.getItem('pf.theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      var a = localStorage.getItem('pf.accent');
+      if (a && /^#[0-9a-f]{6}$/i.test(a)) document.documentElement.style.setProperty('--accent', a);
+    } catch (e) {}
+  </script>
 </head>
 
 <svg style="display:none">
@@ -125,9 +135,9 @@
         <div><div class="wordmark">PixelForge</div><div class="tagline">Image Pipeline</div></div>
       </div>
       <div class="nav-group-label">Navigation</div>
-      <div class="nav-item active" data-page="dashboard" id="nav-dashboard"><svg class="nav-icon" width="15" height="15"><use href="#ic-dashboard"/></svg> Dashboard</div>
-      <div class="nav-item" data-page="settings" id="nav-settings"><svg class="nav-icon" width="15" height="15"><use href="#ic-settings"/></svg> Settings</div>
-      <div class="nav-item" data-page="about" id="nav-about"><svg class="nav-icon" width="15" height="15"><use href="#ic-info"/></svg> About</div>
+      <div class="nav-item active" data-page="dashboard" id="nav-dashboard" role="button" tabindex="0"><svg class="nav-icon" width="15" height="15"><use href="#ic-dashboard"/></svg> Dashboard</div>
+      <div class="nav-item" data-page="settings" id="nav-settings" role="button" tabindex="0"><svg class="nav-icon" width="15" height="15"><use href="#ic-settings"/></svg> Settings</div>
+      <div class="nav-item" data-page="about" id="nav-about" role="button" tabindex="0"><svg class="nav-icon" width="15" height="15"><use href="#ic-info"/></svg> About</div>
       <div class="sidebar-footer">
         <div class="refora-pill">
           <div class="refora-indicator"></div>
@@ -179,7 +189,13 @@
         </div>
 
         <div class="card mb-12 hidden" id="queue-card">
-          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg><span class="card-header-title">Input Queue</span></div>
+          <div class="card-header">
+            <svg class="card-header-icon" width="14" height="14"><use href="#ic-folder"/></svg>
+            <span class="card-header-title">Input Queue</span>
+            <span class="count-chip" id="queue-count">0</span>
+            <span class="card-header-spacer"></span>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-queue"><svg width="12" height="12"><use href="#ic-trash"/></svg> Clear all</button>
+          </div>
           <div class="queue-list" id="queue-list"></div>
         </div>
 
@@ -232,8 +248,15 @@
         </div>
 
         <div class="card mb-12 hidden" id="results-card">
-          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-image"/></svg><span class="card-header-title">Results</span><span class="card-header-spacer"></span><span class="set-desc" id="results-hint">Hover a tile to compare, open, or reveal</span></div>
+          <div class="card-header">
+            <svg class="card-header-icon" width="14" height="14"><use href="#ic-image"/></svg>
+            <span class="card-header-title">Results</span>
+            <span class="card-header-spacer"></span>
+            <span class="set-desc" id="results-hint">Hover a tile to compare, open, or reveal</span>
+            <button class="btn btn-ghost btn-sm" id="btn-open-run"><svg width="12" height="12"><use href="#ic-folder-open"/></svg> Open output</button>
+          </div>
           <div class="gallery-grid" id="gallery-grid"></div>
+          <div class="gallery-more hidden" id="gallery-more"></div>
         </div>
 
         <div class="card" id="output-folders-card">
@@ -276,12 +299,8 @@
                 <div style="display:flex;align-items:center;gap:8px;"><input type="color" class="ctrl-color" id="set-accent-color" value="#6366f1"/><span style="font-size:11px;color:var(--text-3);font-family:var(--mono);" id="set-accent-preview">#6366f1</span></div>
               </div>
               <div class="set-row">
-                <div><div class="set-label">Scan Subfolders</div><div class="set-desc">Process nested folders, preserving structure</div></div>
-                <label class="toggle"><input type="checkbox" id="set-recursive"/><span class="toggle-track"></span></label>
-              </div>
-              <div class="set-row">
-                <div><div class="set-label">Output Naming</div><div class="set-desc">Tokens: {name} {model} {scale} {index}</div></div>
-                <input class="ctrl-input" id="set-naming" type="text" placeholder="{name}" style="min-width:180px"/>
+                <div><div class="set-label">Restore Last Session</div><div class="set-desc">Reopen with your previous input queue instead of a clean slate</div></div>
+                <label class="toggle"><input type="checkbox" id="set-restore-session"/><span class="toggle-track"></span></label>
               </div>
               <div class="set-row">
                 <div><div class="set-label">Notify on Complete</div><div class="set-desc">Desktop notification when a run finishes</div></div>
@@ -290,6 +309,29 @@
               <div class="set-row">
                 <div><div class="set-label">Sound on Complete</div><div class="set-desc">Play a short chime when done</div></div>
                 <label class="toggle"><input type="checkbox" id="set-sound"/><span class="toggle-track"></span></label>
+              </div>
+              <div class="set-row">
+                <div><div class="set-label">Warn Before Quitting</div><div class="set-desc">Ask for confirmation if a run is still going</div></div>
+                <label class="toggle"><input type="checkbox" id="set-confirm-exit"/><span class="toggle-track"></span></label>
+              </div>
+            </div>
+
+            <div class="card mb-12">
+              <div class="settings-section-title">Output</div>
+              <div class="set-row">
+                <div><div class="set-label">Previous Results</div><div class="set-desc" id="output-mode-desc">Each run replaces the last one</div></div>
+                <div class="segmented" id="output-mode-seg">
+                  <button class="seg-btn active" data-outmode="replace">Replace</button>
+                  <button class="seg-btn" data-outmode="keep">Keep all</button>
+                </div>
+              </div>
+              <div class="set-row">
+                <div><div class="set-label">Scan Subfolders</div><div class="set-desc">Process nested folders, preserving structure</div></div>
+                <label class="toggle"><input type="checkbox" id="set-recursive"/><span class="toggle-track"></span></label>
+              </div>
+              <div class="set-row">
+                <div><div class="set-label">Output Naming</div><div class="set-desc">Tokens: {name} {model} {scale} {index}</div></div>
+                <input class="ctrl-input" id="set-naming" type="text" placeholder="{name}" style="min-width:180px"/>
               </div>
             </div>
 
@@ -336,9 +378,11 @@
               <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">AI Models Folder</div><div class="set-desc">.bin and .param files (overrides bundled)</div></div><div class="path-field"><input class="ctrl-input" id="set-models-path" type="text" placeholder="Auto-detected"/><button class="btn btn-ghost btn-sm" id="btn-browse-models">Browse</button></div></div>
               <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">Upscaled Output</div><div class="set-desc">Where upscaled images are saved</div></div><div class="path-field"><input class="ctrl-input" id="set-upscaled-path" type="text"/><button class="btn btn-ghost btn-sm" id="btn-browse-upscaled">Browse</button></div></div>
               <div class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px;"><div><div class="set-label">Compressed Output</div><div class="set-desc">Where compressed images are saved</div></div><div class="path-field"><input class="ctrl-input" id="set-compressed-path" type="text"/><button class="btn btn-ghost btn-sm" id="btn-browse-compressed">Browse</button></div></div>
-              <div class="mt-12" style="display:flex;gap:8px;">
+              <div class="mt-12" style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="btn btn-ghost btn-sm" id="btn-rerun-setup"><svg width="12" height="12"><use href="#ic-download"/></svg> Re-run Setup</button>
                 <button class="btn btn-ghost btn-sm" id="btn-open-logs"><svg width="12" height="12"><use href="#ic-folder-open"/></svg> Open Logs</button>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh-gpus"><svg width="12" height="12"><use href="#ic-refresh"/></svg> Re-detect GPUs</button>
+                <button class="btn btn-ghost btn-sm" id="btn-reset-settings"><svg width="12" height="12"><use href="#ic-refresh"/></svg> Reset to Defaults</button>
               </div>
             </div>
           </div>
@@ -356,9 +400,26 @@
           </div>
           <div class="about-meta">
             <div class="about-meta-item"><div class="v" id="about-version">—</div><div class="l">Version</div></div>
-            <div class="about-meta-item"><div class="v" id="about-update-state">Checking…</div><div class="l">Updates</div></div>
+            <div class="about-meta-item"><div class="v">Windows</div><div class="l">Platform</div></div>
+            <div class="about-meta-item"><div class="v">MIT</div><div class="l">License</div></div>
           </div>
-          <div class="mt-12"><button class="btn btn-ghost btn-sm" id="btn-about-check"><svg width="13" height="13"><use href="#ic-refresh"/></svg> Check for Updates</button></div>
+          <div class="mt-12" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" data-link="https://pixelforge.reforatech.com"><svg width="13" height="13"><use href="#ic-external"/></svg> Website</button>
+            <button class="btn btn-ghost btn-sm" data-link="https://github.com/refora-technologies/pixelforge"><svg width="13" height="13"><use href="#ic-external"/></svg> GitHub</button>
+            <button class="btn btn-ghost btn-sm" data-link="https://github.com/refora-technologies/pixelforge/issues"><svg width="13" height="13"><use href="#ic-warn"/></svg> Report an Issue</button>
+            <button class="btn btn-ghost btn-sm" id="btn-about-updates"><svg width="13" height="13"><use href="#ic-refresh"/></svg> Updates</button>
+          </div>
+        </div>
+
+        <div class="card mb-12">
+          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-scan"/></svg><span class="card-header-title">Keyboard Shortcuts</span></div>
+          <table class="stack-table">
+            <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td>Add a folder to the queue</td><td></td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>I</kbd></td><td>Add individual images</td><td></td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Start the pipeline</td><td></td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>1</kbd> … <kbd>3</kbd></td><td>Switch between pages</td><td></td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close the compare view</td><td></td></tr>
+          </table>
         </div>
 
         <div class="card">
@@ -386,14 +447,16 @@
     <div class="cmp" id="cmp">
       <span class="cmp-tag before">Original</span>
       <span class="cmp-tag after">Upscaled</span>
-      <img id="cmp-before-img" src="" alt=""/>
-      <div class="cmp-after" id="cmp-after"><img id="cmp-after-img" src="" alt=""/></div>
+      <img id="cmp-img-base" src="" alt=""/>
+      <div class="cmp-clip" id="cmp-clip"><img id="cmp-img-overlay" src="" alt=""/></div>
       <div class="cmp-divider" id="cmp-divider"></div>
       <div class="cmp-handle" id="cmp-handle"><svg width="16" height="16"><use href="#ic-compare"/></svg></div>
       <input type="range" class="cmp-range" id="cmp-range" min="0" max="100" value="50"/>
     </div>
   </div>
 </div>
+
+<div id="toast-stack"></div>
 
 <script src="renderer.js"></script>
 </body>
