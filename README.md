@@ -3,7 +3,7 @@
 > AI-powered batch image upscaling and compression for Windows. Free, offline, private.
 
 ![Windows](https://img.shields.io/badge/Windows-10%2F11-blue?logo=windows)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/refora-technologies/pixelforge)](https://github.com/refora-technologies/pixelforge/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/refora-technologies/pixelforge/total)](https://github.com/refora-technologies/pixelforge/releases)
 
@@ -96,7 +96,7 @@ PixelForge is an automation layer built on outstanding open-source tools:
 | [electron-store](https://github.com/sindresorhus/electron-store) | MIT | Persistent settings storage |
 | [extract-zip](https://github.com/maxogden/extract-zip) | BSD-2 | ZIP extraction for dependency setup |
 
-Full attribution and license texts are included in every installation via the EULA screen.
+PixelForge downloads upscayl-ncnn and caesium-clt from their official releases on first launch and runs them unmodified, as separate programs. Full attribution and license notices are shown on the license screen of every installer ([build/license.txt](build/license.txt)).
 
 ---
 
@@ -141,11 +141,16 @@ npm run verify:published -- --download
 
 ## License
 
-MIT (c) 2026 [Refora Technologies](https://reforatech.com)
+PixelForge is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE) (GPL-3.0-or-later).
+© 2026 [Refora Technologies](https://reforatech.com).
 
-This project is MIT licensed. Third-party binaries (upscayl-ncnn, caesium-clt) are distributed
-under their respective licenses (AGPL-3.0 and GPL-3.0). See [LICENSE](LICENSE) and the
-[EULA](build/license.txt) for full attribution.
+You may use it for any purpose, including commercial work, share it, and change it. If you share a changed
+version, it must also be under the GPL, with its source code available.
+
+Versions up to and including 1.2.0 were released under the MIT License.
+
+The open-source components PixelForge uses keep their own licenses (see [Open Source Stack](#open-source-stack)
+and [build/license.txt](build/license.txt)).
 
 ---
 

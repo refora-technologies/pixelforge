@@ -4,7 +4,7 @@
   "description": "AI-powered image upscaling and compression automation by Refora Technologies",
   "main": "main.js",
   "author": "Refora Technologies",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
