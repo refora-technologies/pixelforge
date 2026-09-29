@@ -1001,3 +1001,13 @@ kbd {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ─── Recent runs ───────────────────────────────────────────────────────────── */
+.recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.recent-item { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-top: 1px solid var(--border-1); }
+.recent-item:first-child { border-top: none; padding-top: 2px; }
+.recent-main { flex: 1; min-width: 0; }
+.recent-title { font-size: 12.5px; font-weight: 600; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-meta { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.recent-failed { color: var(--yellow-text); }
+.recent-when { font-size: 11px; color: var(--text-3); white-space: nowrap; }

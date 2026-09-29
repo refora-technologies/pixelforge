@@ -156,6 +156,35 @@ for (const [name, buf] of [
   check('scales with the number of images', est({}, [photo, photo, photo]).upscaled === up.upscaled * 3);
   check('nothing in, nothing out', JSON.stringify(est({}, [])) === '{"upscaled":0,"compressed":0}');
 
+  // ── Run history ──
+  const history = require('../src/main/history');
+  const memStore = (init = {}) => {
+    const data = { ...init };
+    return { get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; }, data };
+  };
+  const result = (o = {}) => ({ success: true, upscaledCount: 3, compressedCount: 3, failedCount: 1, savedPct: 61.6, durationMs: 90500,
+    upscaledDir: 'C:/out/up', compressedDir: 'C:/out/comp', results: [{}, {}, {}], ...o });
+
+  section('history');
+  const st = memStore();
+  const e = history.record(st, result(), { queue: ['C:/photos/Holiday', 'C:/photos/Wedding'], mode: 'both' }, 1000);
+  check('records what a run did', e.images === 3 && e.failed === 1 && e.savedPct === 62 && e.durationMs === 90500 && e.mode === 'both');
+  check('names the inputs, not their paths', JSON.stringify(e.inputs) === '["Holiday","Wedding"]' && e.inputCount === 2);
+  history.record(st, result({ results: [{}] }), { queue: ['C:/x'], mode: 'upscale' }, 2000);
+  check('newest first', st.data['app.runHistory'][0].at === 2000);
+  for (let i = 0; i < 30; i++) history.record(st, result(), { queue: ['C:/x'] }, 3000 + i);
+  check(`keeps the last ${history.MAX_RUNS}`, st.data['app.runHistory'].length === history.MAX_RUNS);
+  const many = history.entryFor(result(), { queue: ['a', 'b', 'c', 'd', 'e'] });
+  check('lists at most three inputs but counts all', many.inputs.length === 3 && many.inputCount === 5);
+  const junk = memStore({ 'app.runHistory': [null, 'x', { at: 'soon' }, { at: 5, mode: 'evil', images: -3, inputs: [1, 'ok'], savedPct: 'lots' }] });
+  const read = history.list(junk);
+  check('drops malformed entries', read.length === 1, JSON.stringify(read));
+  check('repairs odd fields', read[0] && read[0].mode === 'both' && read[0].images === 0 && read[0].savedPct === null && JSON.stringify(read[0].inputs) === '["ok"]');
+  check('a history that isn\'t a list is empty', history.list(memStore({ 'app.runHistory': { at: 1 } })).length === 0);
+  check('marks missing folders', read[0] && read[0].upscaledExists === false && read[0].compressedExists === false);
+  history.clear(st);
+  check('clear empties it', history.list(st).length === 0);
+
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

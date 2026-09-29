@@ -301,6 +301,7 @@ async function init() {
   wireTitlebar();
   wireNav();
   wireDashboard();
+  wireRecentRuns();
   wireSettings();
   wireUpdates();
   wireCompareModal();
@@ -321,6 +322,7 @@ async function init() {
   pipelineMode = settings.pipelineMode || 'both';
   outputMode = settings.outputMode === 'keep' ? 'keep' : 'replace';
   populateSettingsForm();
+  refreshRecentRuns();
   setMode(pipelineMode);
   setOutputMode(outputMode);
   syncNavIndicator();
@@ -980,6 +982,85 @@ function renderIssues(result) {
   $('results-card').classList.remove('hidden');
 }
 
+// ─── Recent runs ────────────────────────────────────────────────────────────
+// The last few finished runs, kept by main.js, so an earlier batch's output is
+// one click away. Everything is set as text — paths never become markup.
+const RECENT_SHOWN = 5;
+
+function wireRecentRuns() {
+  $('btn-clear-history').addEventListener('click', async () => {
+    renderRecentRuns(await window.pixelforge.clearRunHistory());
+  });
+}
+
+async function refreshRecentRuns() {
+  let runs = [];
+  try { runs = await window.pixelforge.getRunHistory(); } catch {}
+  renderRecentRuns(runs);
+}
+
+function whenFmt(at, now = Date.now()) {
+  const min = Math.floor((now - at) / 60000);
+  if (min < 1) return 'Just now';
+  if (min < 60) return `${min} min ago`;
+  const d = new Date(at), today = new Date(now);
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay(d, today)) return `Today, ${time}`;
+  if (sameDay(d, new Date(now - 864e5))) return `Yesterday, ${time}`;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+
+function renderRecentRuns(runs) {
+  runs = Array.isArray(runs) ? runs : [];
+  $('recent-card').classList.toggle('hidden', !runs.length);
+  const list = $('recent-list');
+  list.textContent = '';
+  for (const r of runs.slice(0, RECENT_SHOWN)) {
+    const li = document.createElement('li');
+    li.className = 'recent-item';
+
+    const main = document.createElement('div');
+    main.className = 'recent-main';
+    const title = document.createElement('div');
+    title.className = 'recent-title';
+    const more = r.inputCount - r.inputs.length;
+    title.textContent = (r.inputs.join(', ') || 'Images') + (more > 0 ? ` +${more} more` : '');
+    title.title = title.textContent;
+    const meta = document.createElement('div');
+    meta.className = 'recent-meta';
+    const parts = [`${numFmt(r.images)} ${r.images === 1 ? 'image' : 'images'}`, MODE_LABELS[r.mode] || MODE_LABELS.both];
+    if (r.savedPct > 0) parts.push(`saved ${r.savedPct}%`);
+    if (r.durationMs) parts.push(fmtDuration(r.durationMs));
+    meta.textContent = parts.join(' · ');
+    if (r.failed) {
+      const f = document.createElement('span');
+      f.className = 'recent-failed';
+      f.textContent = ` · ${numFmt(r.failed)} failed`;
+      meta.appendChild(f);
+    }
+    main.append(title, meta);
+
+    const when = document.createElement('span');
+    when.className = 'recent-when';
+    when.textContent = whenFmt(r.at);
+    when.title = new Date(r.at).toLocaleString();
+
+    // The final output: compressed when the run compressed, else upscaled.
+    const dir = r.compressedDir || r.upscaledDir;
+    const exists = r.compressedDir ? r.compressedExists : r.upscaledExists;
+    const open = document.createElement('button');
+    open.className = 'btn btn-ghost btn-sm recent-open';
+    open.innerHTML = '<svg width="12" height="12"><use href="#ic-folder-open"/></svg> Open';
+    open.disabled = !exists;
+    open.title = exists ? dir : 'This output folder no longer exists';
+    open.addEventListener('click', () => window.pixelforge.openFolder(dir));
+
+    li.append(main, when, open);
+    list.appendChild(li);
+  }
+}
+
 // ─── Pipeline run ───────────────────────────────────────────────────────────
 let startingRun = false;
 async function onStartPipeline() {
@@ -1117,6 +1198,7 @@ function onPipelineDone(result) {
   if (processed && result.durationMs > 0) $('timing-rate').textContent = (processed / (result.durationMs / 60000)).toFixed(1);
   $('timing-eta').textContent = '—';
   renderGallery(lastResults);
+  refreshRecentRuns();
   renderIssues(result);
   if (!$('results-card').classList.contains('hidden')) {
     $('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });

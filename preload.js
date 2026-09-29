@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('pixelforge', {
   resumePipeline: () => ipcRenderer.invoke('resume-pipeline'),
   onPipelineProgress: (cb) => ipcRenderer.on('pipeline-progress', (e, data) => cb(data)),
   onPipelineDone: (cb) => ipcRenderer.on('pipeline-done', (e, data) => cb(data)),
+  getRunHistory: () => ipcRenderer.invoke('get-run-history'),
+  clearRunHistory: () => ipcRenderer.invoke('clear-run-history'),
 
   // Settings & paths
   getSettings: () => ipcRenderer.invoke('get-settings'),

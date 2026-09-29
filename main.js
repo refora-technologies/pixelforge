@@ -14,6 +14,7 @@ const pipeline = require('./src/main/pipeline');
 const { collectInputs } = require('./src/main/scan');
 const guard = require('./src/main/guard');
 const space = require('./src/main/space');
+const history = require('./src/main/history');
 const { sha256File } = require('./src/main/download');
 const { spawn } = require('child_process');
 
@@ -255,6 +256,8 @@ ipcMain.handle('start-pipeline', async (_, { queue, inputFolder, settings }) => 
       if (fraction !== null) setTaskbarProgress(fraction, pipeline.isPaused() ? 'paused' : 'normal');
     });
     if (result.success) {
+      // Recorded first, so the dashboard's list already has it when the run ends.
+      try { history.record(store, result, { queue: folders, mode }); } catch {}
       send('pipeline-done', result);
       notifyDone(result, settings);
       if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true);
@@ -295,6 +298,8 @@ ipcMain.handle('check-space', async (_, { queue, settings } = {}) => {
   return { proceed: response === 1, needed: plan.needed, short: plan.short };
 });
 ipcMain.handle('cancel-pipeline', () => pipeline.cancel());
+ipcMain.handle('get-run-history', () => history.list(store));
+ipcMain.handle('clear-run-history', () => { history.clear(store); return []; });
 ipcMain.handle('pause-pipeline', () => { pipeline.pause(); if (pipeline.isRunning()) setTaskbarProgress(lastFraction, 'paused'); });
 ipcMain.handle('resume-pipeline', () => { pipeline.resume(); if (pipeline.isRunning()) setTaskbarProgress(lastFraction, 'normal'); });
 
