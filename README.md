@@ -35,6 +35,8 @@ All processing is 100% local. No cloud, no accounts, and no internet required af
 - **Keeps going past bad images** — a corrupt file is reported and skipped instead of stopping the whole batch.
 - **Input queue** — line up multiple folders and images in a single run, and remove any of them individually.
 - **Keep or replace previous results** — send every run to its own timestamped folder, or replace the last run. Replace only ever removes files PixelForge created: anything else in the output folder is never touched, and results never overwrite each other.
+- **Checks the space first** — before a run, PixelForge estimates how much it will write and warns you if the output drive may not have room.
+- **Recent runs** — the dashboard lists your latest runs with what they did, and opens any run's output in one click.
 - **Recursive scanning** — optionally include subfolders and preserve their structure in the output.
 - **Before / after preview** — a comparison slider with zoom, pan and 1:1 actual-pixel view, fullscreen, and next / previous through every result.
 - **Custom output naming** — rename outputs with templates such as `{name}`, `{model}`, `{scale}`.
@@ -42,7 +44,7 @@ All processing is 100% local. No cloud, no accounts, and no internet required af
 - **Settings save as you go** — paths are checked before they are saved, so a mistake is caught in Settings rather than mid-run.
 - **Keyboard shortcuts** for adding inputs, starting a run, and moving between pages.
 - **Desktop notifications** when a batch finishes.
-- **Built-in update checker** — checks GitHub for new releases and downloads them in-app.
+- **One-click updates** — PixelForge checks GitHub for new releases, verifies each download against its published SHA-256 checksum, and installs it with a single "Restart to update". Updates that can't be verified are refused.
 - **100% offline and private** — zero telemetry, zero cloud, zero accounts.
 
 ---
@@ -108,6 +110,8 @@ cd pixelforge
 npm install
 ```
 
+`npm install` also turns on a pre-commit check (lint, type-check and the fast test suites, a few seconds).
+
 > Note: `src/models/` is not included in the repository (the files are roughly 180 MB, too large for GitHub).
 > To run in development, copy your AI model files (`.param` and `.bin`) into `src/models/`.
 > Models are available at [upscayl-custom-models](https://github.com/upscayl/upscayl-custom-models/tree/main/models).
@@ -125,6 +129,9 @@ npm test
 # Before publishing: walk the installer pages and verify the release through the real updater
 npm run verify:installer
 npm run verify:release
+
+# After publishing: check the live release the way installed copies will see it
+npm run verify:published -- --download
 ```
 
 ---
