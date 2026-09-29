@@ -27,6 +27,7 @@
     "verify:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-installer.ps1",
     "verify:update-install": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-update-install.ps1",
     "shoot": "electron tools/shoot.js",
+    "perf": "electron tools/perf-probe.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
     "installer-art": "electron tools/make-installer-art.js",
