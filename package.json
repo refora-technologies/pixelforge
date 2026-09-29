@@ -25,6 +25,7 @@
     "verify:release": "electron tools/verify-release.js",
     "verify:published": "electron tools/verify-published.js",
     "verify:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-installer.ps1",
+    "verify:update-install": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-update-install.ps1",
     "shoot": "electron tools/shoot.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
@@ -66,6 +67,13 @@
         "to": "models"
       }
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    },
     "win": {
       "target": [
         {
