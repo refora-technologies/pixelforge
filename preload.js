@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('pixelforge', {
   // Window controls
@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('pixelforge', {
   selectFolders: () => ipcRenderer.invoke('select-folders'),
   selectFile: (filters) => ipcRenderer.invoke('select-file', filters),
   selectImages: () => ipcRenderer.invoke('select-images'),
+  // File.path was removed in Electron 32; this is its replacement for drops.
+  getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   scanInputs: (inputs, recursive) => ipcRenderer.invoke('scan-inputs', inputs, recursive),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),

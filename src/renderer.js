@@ -720,7 +720,7 @@ function onDrop(e) {
   const dropped = [];
   let rejected = 0;
   for (let i = 0; i < e.dataTransfer.files.length; i++) {
-    const p = e.dataTransfer.files[i].path;
+    const p = window.pixelforge.getPathForFile(e.dataTransfer.files[i]);
     if (!p) continue;
     const entry = items[i] && items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
     if (entry && entry.isDirectory) dropped.push(p);
