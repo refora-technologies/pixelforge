@@ -2,70 +2,96 @@
 
 const path = require('path');
 const fs = require('fs');
+const fsp = fs.promises;
 const { spawn, exec } = require('child_process');
 const paths = require('./paths');
 const gpu = require('./gpu');
-const { IMAGE_RE } = paths;
+const { collectInputs } = require('./scan');
+const { createWriter } = require('./output');
 
 const POLL_MS = 400;
-const COMPRESS_CHUNK = 60;
+// Images per engine launch. Small enough that pause and cancel take effect in
+// seconds rather than after a whole folder; large enough to amortise the
+// engine's start-up cost.
+const UPSCALE_BATCH = 8;
+const COMPRESS_BATCH = 24;
+const KEEP_LOGS = 30;
 
 const state = {
   running: false,
   cancelled: false,
   paused: false,
+  pauseStartedAt: 0,
+  pausedMs: 0,
   activeProcess: null,
   logStream: null,
+  logPath: '',
 };
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function isRunning() { return state.running; }
 function isPaused() { return state.paused; }
 
 function killActive() {
   if (state.activeProcess) {
-    try { exec(`taskkill /PID ${state.activeProcess.pid} /T /F`); } catch {}
+    try { exec(`taskkill /PID ${state.activeProcess.pid} /T /F`, { windowsHide: true }); } catch {}
     state.activeProcess = null;
   }
 }
 
-function cancel() { state.cancelled = true; state.paused = false; killActive(); }
-function pause() { if (state.running) state.paused = true; }
-function resume() { state.paused = false; }
+function pause() {
+  if (!state.running || state.paused) return;
+  state.paused = true;
+  state.pauseStartedAt = Date.now();
+}
+function resume() {
+  if (!state.paused) return;
+  state.paused = false;
+  state.pausedMs += Date.now() - state.pauseStartedAt;
+  state.pauseStartedAt = 0;
+}
+function cancel() { state.cancelled = true; resume(); killActive(); }
+
+function pausedSoFar() {
+  return state.pausedMs + (state.paused ? Date.now() - state.pauseStartedAt : 0);
+}
 
 async function waitWhilePaused() {
   while (state.paused && !state.cancelled) await sleep(200);
 }
 
+// ── Logging ──
+
+function pruneLogs(dir) {
+  try {
+    const logs = fs.readdirSync(dir).filter(f => /^run-.*\.log$/.test(f)).sort();
+    for (const f of logs.slice(0, Math.max(0, logs.length - KEEP_LOGS))) fs.rmSync(path.join(dir, f), { force: true });
+  } catch {}
+}
+
 function openLog() {
   try {
-    paths.ensureDir(paths.getLogsDir());
+    const dir = paths.getLogsDir();
+    paths.ensureDir(dir);
+    pruneLogs(dir);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const logPath = path.join(paths.getLogsDir(), `run-${stamp}.log`);
-    state.logStream = fs.createWriteStream(logPath, { flags: 'a' });
-    state.logPath = logPath;
-  } catch { state.logStream = null; }
+    state.logPath = path.join(dir, `run-${stamp}.log`);
+    state.logStream = fs.createWriteStream(state.logPath, { flags: 'a' });
+  } catch { state.logStream = null; state.logPath = ''; }
 }
 
 function writeLog(text) {
   if (!state.logStream) return;
-  const ts = new Date().toISOString();
-  try { state.logStream.write(`[${ts}] ${text}\n`); } catch {}
+  try { state.logStream.write(`[${new Date().toISOString()}] ${text}\n`); } catch {}
 }
 
 function closeLog() {
   if (state.logStream) { try { state.logStream.end(); } catch {} state.logStream = null; }
 }
 
-function clearDir(dir) {
-  paths.ensureDir(dir);
-  try {
-    for (const entry of fs.readdirSync(dir)) {
-      try { fs.rmSync(path.join(dir, entry), { recursive: true, force: true }); } catch {}
-    }
-  } catch {}
-}
+// ── Helpers ──
 
 // run-2026-08-17_14-32-05 — sortable and filename-safe.
 function runStamp(date = new Date()) {
@@ -74,366 +100,441 @@ function runStamp(date = new Date()) {
          `_${p(date.getHours())}-${p(date.getMinutes())}-${p(date.getSeconds())}`;
 }
 
-function placeFile(src, dest) {
-  try { fs.linkSync(src, dest); }
-  catch { fs.copyFileSync(src, dest); }
-}
-
+// Strips what Windows forbids in a filename: reserved characters, control
+// characters, and trailing dots or spaces.
 function sanitizeName(name) {
-  return name.replace(/[<>:"/\\|?*]/g, '').trim() || 'image';
+  const printable = [...String(name)].filter(c => c.charCodeAt(0) >= 32).join('');
+  return printable.replace(/[<>:"/\\|?*]/g, '').replace(/[. ]+$/, '').trim() || 'image';
 }
 
 function applyTemplate(tpl, tokens) {
-  const out = tpl
+  return sanitizeName(tpl
     .replace(/\{name\}/g, tokens.name)
     .replace(/\{model\}/g, tokens.model)
     .replace(/\{scale\}/g, tokens.scale)
-    .replace(/\{index\}/g, String(tokens.index));
-  return sanitizeName(out);
+    .replace(/\{index\}/g, String(tokens.index)));
 }
 
-function walkImages(root, recursive) {
-  const out = [];
-  const walk = (dir, relBase) => {
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const abs = path.join(dir, e.name);
-      const rel = relBase ? path.join(relBase, e.name) : e.name;
-      if (e.isDirectory()) { if (recursive) walk(abs, rel); }
-      else if (IMAGE_RE.test(e.name)) out.push({ abs, rel });
+function clampInt(value, min, max, fallback) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+function countFiles(dir) {
+  try { return fs.readdirSync(dir).length; } catch { return 0; }
+}
+
+function fileSize(p) {
+  try { return fs.statSync(p).size; } catch { return 0; }
+}
+
+async function linkOrCopy(src, dest) {
+  try { await fsp.link(src, dest); }
+  catch { await fsp.copyFile(src, dest); }
+}
+
+function lastLines(text) {
+  return String(text).trim().split(/\r?\n/).filter(Boolean).slice(-2).join(' ').slice(-240);
+}
+
+// Splits work into launches where no two inputs share a file stem, so the
+// tool's outputs (which keep the stem) can't overwrite one another.
+function partitionByStem(work, size) {
+  const chunks = [];
+  for (const w of work) {
+    const stem = path.parse(w.input).name.toLowerCase();
+    let chunk = chunks.find(c => c.items.length < size && !c.stems.has(stem));
+    if (!chunk) { chunk = { items: [], stems: new Set() }; chunks.push(chunk); }
+    chunk.items.push(w);
+    chunk.stems.add(stem);
+  }
+  return chunks.map(c => c.items);
+}
+
+// Throughput and ETA are measured per stage, with paused time excluded —
+// otherwise compression inherits the whole upscale duration and reports an ETA
+// of hours.
+function makeReporter(send, runStart) {
+  let stage = '';
+  let stageStart = 0;
+  let pausedAtStageStart = 0;
+  let lastLogged = '';
+  return (base, completed, total) => {
+    const now = Date.now();
+    if (base.stage !== stage) {
+      stage = base.stage;
+      stageStart = now;
+      pausedAtStageStart = pausedSoFar();
     }
-  };
-  walk(root, '');
-  return out;
-}
-
-function countImages(dir) {
-  try { return fs.readdirSync(dir).filter(f => IMAGE_RE.test(f)).length; }
-  catch { return 0; }
-}
-
-function dirSize(dir) {
-  let total = 0;
-  const walk = (d) => {
-    let entries;
-    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(d, e.name);
-      if (e.isDirectory()) walk(full);
-      else { try { total += fs.statSync(full).size; } catch {} }
-    }
-  };
-  walk(dir);
-  return total;
-}
-
-function makeReporter(send, startTime, total) {
-  return (base, completed) => {
-    const elapsedMs = Date.now() - startTime;
-    const sec = elapsedMs / 1000;
-    const throughput = completed > 0 && sec > 0 ? completed / sec : 0;
-    const etaMs = throughput > 0 ? (total - completed) / throughput * 1000 : 0;
+    const activeSec = Math.max(0, (now - stageStart) - (pausedSoFar() - pausedAtStageStart)) / 1000;
+    const throughput = completed > 0 && activeSec > 0 ? completed / activeSec : 0;
+    const etaMs = throughput > 0 ? Math.max(0, total - completed) / throughput * 1000 : 0;
     const percent = total > 0 ? Math.min(100, Math.round(completed / total * 100)) : 0;
-    const payload = { ...base, current: completed, total, percent, elapsedMs, etaMs, throughput };
-    if (base.message) writeLog(base.message);
-    send(payload);
+    if (base.message && base.message !== lastLogged) { writeLog(base.message); lastLogged = base.message; }
+    send({ ...base, current: completed, total, percent, elapsedMs: now - runStart, etaMs, throughput });
   };
 }
 
-function runWithPolling(bin, args, cwd, watchDir, onPoll) {
+function runWithPolling(bin, args, cwd, onPoll) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(bin, args, { cwd });
+    const proc = spawn(bin, args, { cwd, windowsHide: true });
     state.activeProcess = proc;
     proc.stdout.resume();
+    // The engine prints progress to stderr continuously; keep only the tail.
     let stderr = '';
-    proc.stderr.on('data', d => { stderr += d.toString(); });
+    proc.stderr.on('data', d => { stderr = (stderr + d.toString()).slice(-4000); });
 
     const poll = setInterval(() => { try { onPoll(); } catch {} }, POLL_MS);
+    const settle = () => {
+      clearInterval(poll);
+      if (state.activeProcess === proc) state.activeProcess = null;
+    };
 
     proc.on('close', (code) => {
-      clearInterval(poll);
-      state.activeProcess = null;
-      if (state.cancelled) { resolve({ cancelled: true }); return; }
-      if (code === 0) resolve({ cancelled: false });
-      else reject(new Error(`${path.basename(bin)} exited with code ${code}. ${stderr.trim().slice(-240)}`));
+      settle();
+      if (state.cancelled || code === 0) resolve();
+      else reject(new Error(`${path.basename(bin)} exited with code ${code}. ${lastLines(stderr)}`.trim()));
     });
-    proc.on('error', (err) => {
-      clearInterval(poll);
-      state.activeProcess = null;
-      reject(err);
-    });
+    proc.on('error', (err) => { settle(); reject(err); });
   });
 }
 
+// ── Stages ──
+
+async function upscaleStage({ items, writer, report, fail, settings, upscaylBin, gpuId }) {
+  const model = settings.upscaylModel || 'upscayl-standard-4x';
+  const scale = ['2', '3', '4'].includes(String(settings.upscaylScale)) ? String(settings.upscaylScale) : '4';
+  const format = ['png', 'jpg', 'webp'].includes(settings.upscaylFormat) ? settings.upscaylFormat : 'png';
+  const template = String(settings.namingTemplate || '').trim() || '{name}';
+  const tile = clampInt(settings.upscaylTileSize, 0, 4096, 0);
+
+  const sharedArgs = ['-s', scale, '-m', paths.getModelsDir(), '-n', model, '-f', format];
+  if (gpuId !== null) sharedArgs.push('-g', gpuId);
+  if (tile > 0) sharedArgs.push('-t', String(tile));
+  if (settings.upscaylTta) sharedArgs.push('-x');
+
+  const total = items.length;
+  let done = 0;
+  let produced = 0;
+  report({ stage: 'upscaling', status: 'starting', message: `Starting — ${plural(total, 'image')} queued`, produced }, 0, total);
+
+  // One engine launch over `batch`. Inputs are renamed to their position in the
+  // run, so photo.jpg + photo.png — or IMG_0001 from two cameras — can't collide.
+  const runBatch = async (batch, tag) => {
+    const inDir = path.join(paths.getTempInputDir(), tag);
+    await fsp.rm(inDir, { recursive: true, force: true });
+    await fsp.mkdir(inDir, { recursive: true });
+    for (const it of batch) await linkOrCopy(it.original, path.join(inDir, it.token + it.ext));
+    const outDir = await writer.stagingDir(tag);
+
+    let error = null;
+    try {
+      await runWithPolling(upscaylBin, ['-i', inDir, '-o', outDir, ...sharedArgs], path.dirname(upscaylBin), () => {
+        const n = Math.min(countFiles(outDir), batch.length);
+        report({ stage: 'upscaling', status: 'running', message: `Upscaling ${done + n} of ${total}`, produced: produced + n }, done + n, total);
+      });
+    } catch (err) { error = err; }
+    await fsp.rm(inDir, { recursive: true, force: true }).catch(() => {});
+
+    const ok = [];
+    const missing = [];
+    for (const it of batch) (fs.existsSync(path.join(outDir, `${it.token}.${format}`)) ? ok : missing).push(it);
+    return { ok, missing, error, outDir };
+  };
+
+  const place = async (it, outDir) => {
+    const name = template === '{name}'
+      ? `${it.base}.${format}`
+      : `${applyTemplate(template, { name: it.base, model, scale, index: it.index })}.${format}`;
+    it.upscaled = await writer.place(path.join(outDir, `${it.token}.${format}`), it.relDir, name);
+    produced++;
+  };
+
+  const reasonFrom = (err) => err
+    ? err.message
+    : 'The engine produced no output for this image. It may be corrupt or in an unsupported format.';
+
+  for (let b = 0; b < total; b += UPSCALE_BATCH) {
+    await waitWhilePaused();
+    if (state.cancelled) return;
+
+    const batch = items.slice(b, b + UPSCALE_BATCH);
+    const result = await runBatch(batch, `u${b}`);
+    if (state.cancelled) return;
+    for (const it of result.ok) await place(it, result.outDir);
+
+    if (result.missing.length) {
+      // One bad image can take a whole launch down, so retry the rest one at a
+      // time — only the image that is actually broken should fail.
+      let lastError = result.error;
+      if (result.missing.length > 1) {
+        for (const it of result.missing) {
+          await waitWhilePaused();
+          if (state.cancelled) return;
+          const single = await runBatch([it], `u${b}-${it.token}`);
+          if (state.cancelled) return;
+          if (single.ok.length) await place(it, single.outDir);
+          else { lastError = single.error || lastError; fail(it, 'upscale', reasonFrom(single.error)); }
+        }
+      } else {
+        fail(result.missing[0], 'upscale', reasonFrom(result.error));
+      }
+      // Every image so far has failed even on its own: the engine itself is
+      // broken (driver, GPU, model), and carrying on would only repeat that.
+      if (produced === 0) {
+        throw new Error(`The upscaling engine couldn't process any images. ${reasonFrom(lastError)} ` +
+          'Try Settings → Re-detect GPUs, or choose a different GPU.');
+      }
+    }
+
+    done += batch.length;
+    report({ stage: 'upscaling', status: 'running', message: `Upscaling ${done} of ${total}`, produced }, done, total);
+  }
+
+  const skipped = total - produced;
+  report({
+    stage: 'upscaling', status: 'done', produced,
+    message: `Upscaling complete — ${produced} of ${total}${skipped ? `, ${skipped} failed` : ''}`,
+  }, total, total);
+}
+
+async function compressStage({ items, writer, report, fail, settings, caesiumBin, fromUpscale }) {
+  const work = (fromUpscale ? items.filter(it => it.upscaled) : items).map(it => ({
+    it,
+    input: fromUpscale ? it.upscaled : it.original,
+    relDir: it.relDir,
+  }));
+  const total = work.length;
+  if (!total) {
+    report({ stage: 'compressing', status: 'done', message: 'Nothing to compress.', produced: 0 }, 0, 0);
+    return;
+  }
+
+  // caesium accepts exactly one of --quality / --lossless / --max-size; passing
+  // both makes it reject the whole command.
+  const flags = settings.caesiumLossless
+    ? ['--lossless']
+    : ['-q', String(clampInt(settings.caesiumQuality, 0, 100, 82))];
+  if (settings.caesiumKeepMeta) flags.push('-e');
+  if (['jpeg', 'png', 'webp'].includes(settings.caesiumFormat)) flags.push('--format', settings.caesiumFormat);
+
+  let done = 0;
+  let produced = 0;
+  report({ stage: 'compressing', status: 'starting', message: `Compressing ${plural(total, 'image')}`, produced }, 0, total);
+
+  const runChunk = async (chunk, tag) => {
+    const outDir = await writer.stagingDir(tag);
+    let error = null;
+    try {
+      await runWithPolling(caesiumBin, [...flags, '-o', outDir, ...chunk.map(w => w.input)], undefined, () => {
+        const n = Math.min(countFiles(outDir), chunk.length);
+        report({ stage: 'compressing', status: 'running', message: `Compressing ${done + n} of ${total}`, produced: produced + n }, done + n, total);
+      });
+    } catch (err) { error = err; }
+
+    // Output keeps the input's stem; the extension changes with --format.
+    const byStem = new Map();
+    try { for (const f of fs.readdirSync(outDir)) byStem.set(path.parse(f).name.toLowerCase(), f); } catch {}
+    const ok = [];
+    const missing = [];
+    for (const w of chunk) {
+      const file = byStem.get(path.parse(w.input).name.toLowerCase());
+      if (file) ok.push({ w, staged: path.join(outDir, file), file }); else missing.push(w);
+    }
+    return { ok, missing, error };
+  };
+
+  const place = async ({ w, staged, file }) => {
+    w.it.compressed = await writer.place(staged, w.relDir, file);
+    produced++;
+  };
+
+  const reasonFrom = (err) => err ? err.message : 'The compressor produced no output for this image.';
+
+  const chunks = partitionByStem(work, COMPRESS_BATCH);
+  for (let c = 0; c < chunks.length; c++) {
+    await waitWhilePaused();
+    if (state.cancelled) return;
+
+    const chunk = chunks[c];
+    const result = await runChunk(chunk, `c${c}`);
+    if (state.cancelled) return;
+    for (const entry of result.ok) await place(entry);
+
+    if (result.missing.length) {
+      let lastError = result.error;
+      if (result.missing.length > 1 && result.error) {
+        for (const w of result.missing) {
+          await waitWhilePaused();
+          if (state.cancelled) return;
+          const single = await runChunk([w], `c${c}-${path.parse(w.input).name}`);
+          if (state.cancelled) return;
+          if (single.ok.length) await place(single.ok[0]);
+          else { lastError = single.error || lastError; fail(w.it, 'compress', reasonFrom(single.error)); }
+        }
+      } else {
+        for (const w of result.missing) fail(w.it, 'compress', reasonFrom(result.error));
+      }
+      if (produced === 0 && lastError) {
+        throw new Error(`The compressor couldn't process any images. ${reasonFrom(lastError)}`);
+      }
+    }
+
+    done += chunk.length;
+    report({ stage: 'compressing', status: 'running', message: `Compressing ${done} of ${total}`, produced }, done, total);
+  }
+
+  const skipped = total - produced;
+  report({
+    stage: 'compressing', status: 'done', produced,
+    message: `Compression complete — ${produced} of ${total}${skipped ? `, ${skipped} failed` : ''}`,
+  }, total, total);
+}
+
+// ── Run ──
+
 async function runPipeline(args, send) {
   if (state.running) return { success: false, error: 'A run is already in progress.' };
-  state.running = true;
-  state.cancelled = false;
-  state.paused = false;
+  Object.assign(state, { running: true, cancelled: false, paused: false, pauseStartedAt: 0, pausedMs: 0 });
   openLog();
   try {
     return await runPipelineInner(args, send);
   } finally {
     closeLog();
     state.running = false;
+    state.activeProcess = null;
   }
 }
 
 async function runPipelineInner({ queue, settings }, send) {
-  const startTime = Date.now();
-  const mode = settings.pipelineMode || 'both';
-  const doUpscale = mode === 'both' || mode === 'upscale';
-  const doCompress = mode === 'both' || mode === 'compress';
-  const recursive = !!settings.recursive;
+  const runStart = Date.now();
+  const mode = ['both', 'upscale', 'compress'].includes(settings.pipelineMode) ? settings.pipelineMode : 'both';
+  const doUpscale = mode !== 'compress';
+  const doCompress = mode !== 'upscale';
+  const keepRuns = settings.outputMode === 'keep';
 
   const upscaylBin = paths.getUpscaylBin();
   const caesiumBin = paths.getCaesiumBin();
-  const modelsDir = paths.getModelsDir();
-  const tmpInputDir = paths.getTempInputDir();
+  if (doUpscale && !fs.existsSync(upscaylBin)) throw new Error('The upscaling engine is missing. Open Settings and choose Re-run Setup to install it.');
+  if (doCompress && !fs.existsSync(caesiumBin)) throw new Error('The compression tool is missing. Open Settings and choose Re-run Setup to install it.');
 
-  // 'keep' writes each run into its own timestamped subfolder so earlier
-  // results survive; 'replace' reuses the root and wipes it first.
-  const keepRuns = settings.outputMode === 'keep';
+  const upBase = paths.getUpscaledDir();
+  const compBase = paths.getCompressedDir();
+  const targets = [];
+  if (doUpscale) targets.push({ base: upBase, label: 'upscaled', isDefault: paths.samePath(upBase, paths.defaultUpscaledDir()) });
+  if (doCompress) targets.push({ base: compBase, label: 'compressed', isDefault: paths.samePath(compBase, paths.defaultCompressedDir()) });
+
+  // ── Pre-flight: refuse anything that could lose data, before touching disk ──
+  for (const t of targets) {
+    if (!paths.tryEnsureDir(t.base)) {
+      throw new Error(`The ${t.label} output folder isn't reachable: ${t.base}. Reconnect the drive, or choose another folder in Settings.`);
+    }
+  }
+  if (doUpscale && doCompress && (paths.isSameOrInside(upBase, compBase) || paths.isSameOrInside(compBase, upBase))) {
+    throw new Error('The upscaled and compressed output folders overlap. Choose two separate folders in Settings.');
+  }
+  if (!keepRuns) {
+    for (const input of queue) {
+      const clash = targets.find(t => paths.isSameOrInside(input, t.base));
+      if (clash) {
+        throw new Error(`"${path.basename(input) || input}" is inside the ${clash.label} output folder, so Replace mode would overwrite it. ` +
+          'Switch Previous Results to "Keep all" in Settings, or pick a different output folder.');
+      }
+    }
+  }
+
+  const collected = await collectInputs(queue, { recursive: !!settings.recursive, excludeDirs: [upBase, compBase] });
+  const multiFolder = collected.filter(e => e.isDir).length > 1;
+  const items = [];
+  for (const entry of collected) {
+    const label = entry.isDir && multiFolder ? sanitizeName(path.basename(entry.input)) : '';
+    for (const f of entry.files) {
+      const sub = path.dirname(f.rel);
+      const { name, ext } = path.parse(f.abs);
+      const index = items.length + 1;
+      items.push({
+        original: f.abs,
+        relDir: entry.isDir ? path.join(label, sub === '.' ? '' : sub) : '',
+        base: name,
+        ext,
+        index,
+        token: String(index).padStart(6, '0'),
+        upscaled: '',
+        compressed: '',
+      });
+    }
+  }
+  if (!items.length) return { success: false, error: 'No supported images were found in the selection.' };
+
   const stamp = keepRuns ? runStamp() : '';
-  const upscaledRoot = keepRuns ? path.join(paths.getUpscaledDir(), stamp) : paths.getUpscaledDir();
-  const compressedRoot = keepRuns ? path.join(paths.getCompressedDir(), stamp) : paths.getCompressedDir();
+  const writerFor = (t) => createWriter(keepRuns ? path.join(t.base, stamp) : t.base, {
+    replace: !keepRuns,
+    legacyOwned: t.isDefault,
+  });
+  const upWriter = doUpscale ? writerFor(targets[0]) : null;
+  const compWriter = doCompress ? writerFor(targets[targets.length - 1]) : null;
 
-  const model = settings.upscaylModel || 'upscayl-standard-4x';
-  const scale = String(settings.upscaylScale || '4');
-  const format = settings.upscaylFormat || 'png';
-  const template = settings.namingTemplate || '{name}';
   let gpuId = settings.upscaylGpu && settings.upscaylGpu !== 'auto' ? String(settings.upscaylGpu) : null;
   if (gpuId === null && doUpscale) gpuId = await gpu.resolveDedicatedGpuId();
 
-  if (keepRuns) {
-    if (doUpscale) paths.ensureDir(upscaledRoot);
-    if (doCompress) paths.ensureDir(compressedRoot);
-  } else {
-    if (doUpscale) clearDir(upscaledRoot);
-    if (doCompress) clearDir(compressedRoot);
-  }
+  const report = makeReporter(send, runStart);
+  const failures = [];
+  const fail = (item, stage, reason) => {
+    failures.push({ path: item.original, stage, reason });
+    writeLog(`FAILED [${stage}] ${item.original} — ${reason}`);
+  };
 
-  const folderEntries = [];
-  const fileEntries = [];
-  for (const p of queue) {
-    let stat;
-    try { stat = fs.statSync(p); } catch { continue; }
-    if (stat.isDirectory()) folderEntries.push(p);
-    else if (IMAGE_RE.test(p)) fileEntries.push(p);
-  }
-
-  const multiFolder = folderEntries.length > 1;
-  const sources = [];
-  let totalImages = 0;
-  for (const folder of folderEntries) {
-    const label = multiFolder ? sanitizeName(path.basename(folder)) : '';
-    const images = walkImages(folder, recursive);
-    totalImages += images.length;
-    sources.push({ label, images });
-  }
-  if (fileEntries.length) {
-    const images = fileEntries.map(f => ({ abs: f, rel: path.basename(f) }));
-    totalImages += images.length;
-    sources.push({ label: '', images });
-  }
-
-  if (totalImages === 0) {
-    send({ stage: 'upscaling', status: 'done', message: 'No images found in selected folder(s).', percent: 100 });
-    closeLog();
-    state.running = false;
-    return { success: false, error: 'No images found.' };
-  }
-
-  if (doUpscale && !fs.existsSync(upscaylBin)) {
-    closeLog();
-    state.running = false;
-    throw new Error('upscayl-bin.exe not found. Please run setup.');
-  }
-  if (doCompress && !fs.existsSync(caesiumBin)) {
-    closeLog();
-    state.running = false;
-    throw new Error('caesiumclt.exe not found. Please run setup.');
-  }
-
-  const report = makeReporter(send, startTime, totalImages);
-  const manifest = [];
-
-  // ── Stage 1: Upscaling ──
-  let upscaledCount = 0;
-  if (doUpscale) {
-    report({ stage: 'upscaling', status: 'starting', message: `Starting — ${totalImages} image${totalImages !== 1 ? 's' : ''} queued` }, 0);
-
-    for (const source of sources) {
-      if (state.cancelled) break;
-      const groups = new Map();
-      for (const img of source.images) {
-        const outRelDir = path.join(source.label, path.dirname(img.rel) === '.' ? '' : path.dirname(img.rel));
-        if (!groups.has(outRelDir)) groups.set(outRelDir, []);
-        groups.get(outRelDir).push({ abs: img.abs, name: path.basename(img.rel) });
-      }
-
-      for (const [outRelDir, files] of groups) {
-        if (state.cancelled) break;
-        await waitWhilePaused();
-
-        const outDir = path.join(upscaledRoot, outRelDir);
-        paths.ensureDir(outDir);
-        clearDir(tmpInputDir);
-        for (const f of files) placeFile(f.abs, path.join(tmpInputDir, f.name));
-
-        const args = ['-i', tmpInputDir, '-o', outDir, '-s', scale, '-m', modelsDir, '-n', model, '-f', format];
-        if (gpuId !== null) args.push('-g', gpuId);
-        if (settings.upscaylTileSize && String(settings.upscaylTileSize) !== '0') args.push('-t', String(settings.upscaylTileSize));
-        if (settings.upscaylTta) args.push('-x');
-
-        const groupBase = upscaledCount;
-        // Two groups can share an output directory, so progress is measured
-        // against what was already there rather than the raw file count.
-        const preexisting = countImages(outDir);
-        await runWithPolling(upscaylBin, args, path.dirname(upscaylBin), outDir, () => {
-          const done = Math.min(Math.max(0, countImages(outDir) - preexisting), files.length);
-          report({ stage: 'upscaling', status: 'running', message: `Upscaling ${groupBase + done} of ${totalImages}` }, groupBase + done);
-        });
-
-        let produced = 0;
-        files.forEach((f, i) => {
-          const base = path.parse(f.name).name;
-          const outPath = path.join(outDir, `${base}.${format}`);
-          if (!fs.existsSync(outPath)) return;
-          produced++;
-          let finalName = `${base}.${format}`;
-          if (template && template !== '{name}') {
-            finalName = `${applyTemplate(template, { name: base, model, scale, index: groupBase + i + 1 })}.${format}`;
-            const renamed = path.join(outDir, finalName);
-            try { if (renamed !== outPath) fs.renameSync(outPath, renamed); } catch { finalName = `${base}.${format}`; }
-          }
-          manifest.push({
-            original: f.abs,
-            upscaled: path.join(outDir, finalName),
-            outRel: path.join(outRelDir, finalName),
-            compressed: '',
-          });
-        });
-
-        upscaledCount = groupBase + produced;
-      }
+  writeLog(`Run: mode=${mode} output=${keepRuns ? 'keep' : 'replace'} images=${items.length}`);
+  try {
+    for (const w of [upWriter, compWriter]) if (w) await w.begin();
+    if (doUpscale) await upscaleStage({ items, writer: upWriter, report, fail, settings, upscaylBin, gpuId });
+    if (doCompress && !state.cancelled) {
+      await compressStage({ items, writer: compWriter, report, fail, settings, caesiumBin, fromUpscale: doUpscale });
     }
-
-    try { fs.rmSync(tmpInputDir, { recursive: true, force: true }); } catch {}
-
-    if (!state.cancelled) {
-      upscaledCount = manifest.length;
-      report({ stage: 'upscaling', status: 'done', message: `Upscaling complete — ${upscaledCount} of ${totalImages} done` }, upscaledCount);
-    }
-  } else {
-    for (const source of sources) {
-      for (const img of source.images) {
-        const outRel = path.join(source.label, img.rel);
-        manifest.push({ original: img.abs, upscaled: img.abs, outRel, compressed: '' });
-      }
-    }
+  } finally {
+    // Always record what was written, so the next Replace run can clean it up.
+    for (const w of [upWriter, compWriter]) if (w) await w.finish();
+    await fsp.rm(paths.getTempInputDir(), { recursive: true, force: true }).catch(() => {});
   }
 
-  if (state.cancelled) return finishCancelled(send);
+  const results = items
+    .filter(it => it.upscaled || it.compressed)
+    .map(it => ({ original: it.original, upscaled: it.upscaled, compressed: it.compressed }));
 
-  // ── Stage 2: Compression ──
-  let compressedCount = 0;
-  if (doCompress) {
-    const items = manifest.filter(m => m.upscaled && fs.existsSync(m.upscaled));
-    const total = items.length || 1;
-    report({ stage: 'compressing', status: 'starting', message: `Compressing ${total} image${total !== 1 ? 's' : ''}` }, 0);
-
-    const byDir = new Map();
-    for (const item of items) {
-      const targetDir = path.join(compressedRoot, path.dirname(item.outRel) === '.' ? '' : path.dirname(item.outRel));
-      if (!byDir.has(targetDir)) byDir.set(targetDir, []);
-      byDir.get(targetDir).push(item.upscaled);
-    }
-
-    const quality = String(settings.caesiumQuality !== undefined ? settings.caesiumQuality : 82);
-    const flags = ['-q', quality];
-    if (settings.caesiumLossless) flags.push('--lossless');
-    if (settings.caesiumKeepMeta) flags.push('-e');
-    if (settings.caesiumFormat && settings.caesiumFormat !== 'same') flags.push('--format', settings.caesiumFormat);
-
-    for (const [targetDir, files] of byDir) {
-      if (state.cancelled) break;
-      paths.ensureDir(targetDir);
-      for (let i = 0; i < files.length; i += COMPRESS_CHUNK) {
-        if (state.cancelled) break;
-        await waitWhilePaused();
-        const chunk = files.slice(i, i + COMPRESS_CHUNK);
-        const args = [...flags, '-o', targetDir, ...chunk];
-        await runWithPolling(caesiumBin, args, undefined, targetDir, () => {
-          const seen = Math.min(dirCountImagesRecursive(compressedRoot), total);
-          report({ stage: 'compressing', status: 'running', message: `Compressing ${seen} of ${total}` }, seen);
-        });
-        compressedCount += chunk.length;
-      }
-    }
-
-    compressedCount = dirCountImagesRecursive(compressedRoot);
-    if (!state.cancelled) report({ stage: 'compressing', status: 'done', message: `Compression complete — ${compressedCount} images` }, total);
-
-    for (const item of items) {
-      const dir = path.join(compressedRoot, path.dirname(item.outRel) === '.' ? '' : path.dirname(item.outRel));
-      const baseNoExt = path.parse(item.outRel).name;
-      try {
-        const match = fs.readdirSync(dir).find(f => IMAGE_RE.test(f) && path.parse(f).name === baseNoExt);
-        if (match) item.compressed = path.join(dir, match);
-      } catch {}
-    }
+  if (state.cancelled) {
+    send({ stage: 'cancelled', status: 'cancelled', message: 'Pipeline cancelled.' });
+    writeLog('Cancelled by user.');
+    return { success: false, cancelled: true, results };
   }
 
-  if (state.cancelled) return finishCancelled(send);
-
-  const beforeSize = doUpscale ? dirSize(upscaledRoot) : manifest.reduce((a, m) => a + safeSize(m.original), 0);
-  const afterSize = doCompress ? dirSize(compressedRoot) : dirSize(upscaledRoot);
+  const upscaledCount = items.filter(it => it.upscaled).length;
+  const compressedCount = items.filter(it => it.compressed).length;
+  // Savings compare like with like: each compressed file against the file it
+  // was made from, measured on the files this run produced — not whatever else
+  // happens to live in the output folder.
+  const compressedItems = items.filter(it => it.compressed);
+  const beforeSize = compressedItems.reduce((a, it) => a + fileSize(doUpscale ? it.upscaled : it.original), 0);
+  const afterSize = compressedItems.reduce((a, it) => a + fileSize(it.compressed), 0);
   const savedPct = beforeSize > 0 ? Math.round((beforeSize - afterSize) / beforeSize * 100) : 0;
 
-  report({ stage: 'complete', status: 'done', message: 'Pipeline complete.' }, totalImages);
-  writeLog(`Done. upscaled=${upscaledCount} compressed=${compressedCount} saved=${savedPct}%`);
-  closeLog();
-  state.running = false;
+  report({ stage: 'complete', status: 'done', message: 'Pipeline complete.' }, items.length, items.length);
+  writeLog(`Done. upscaled=${upscaledCount} compressed=${compressedCount} failed=${failures.length} saved=${savedPct}%`);
 
   return {
     success: true,
-    upscaledCount: doUpscale ? upscaledCount : 0,
-    compressedCount: doCompress ? compressedCount : 0,
-    savedPct,
+    upscaledCount,
+    compressedCount,
+    failedCount: failures.length,
+    failures,
+    savedPct: doCompress ? savedPct : null,
     beforeSize,
     afterSize,
-    durationMs: Date.now() - startTime,
-    upscaledDir: doUpscale ? upscaledRoot : '',
-    compressedDir: doCompress ? compressedRoot : '',
-    results: manifest,
+    durationMs: Date.now() - runStart,
+    upscaledDir: upWriter ? upWriter.root : '',
+    compressedDir: compWriter ? compWriter.root : '',
+    results,
     logPath: state.logPath || '',
   };
-}
-
-function dirCountImagesRecursive(dir) {
-  let n = 0;
-  const walk = (d) => {
-    let entries;
-    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.isDirectory()) walk(path.join(d, e.name));
-      else if (IMAGE_RE.test(e.name)) n++;
-    }
-  };
-  walk(dir);
-  return n;
-}
-
-function safeSize(p) { try { return fs.statSync(p).size; } catch { return 0; } }
-
-function finishCancelled(send) {
-  send({ stage: 'cancelled', status: 'cancelled', message: 'Pipeline cancelled by user.' });
-  writeLog('Cancelled by user.');
-  closeLog();
-  state.running = false;
-  return { success: false, cancelled: true };
 }
 
 module.exports = { runPipeline, cancel, pause, resume, isRunning, isPaused };
