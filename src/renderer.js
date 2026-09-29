@@ -54,8 +54,7 @@ function log(text, cls = '') {
   line.className = 'log-line' + (cls ? ' ' + cls : '');
   const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   line.textContent = `[${ts}] ${text}`;
-  box.appendChild(line);
-  box.appendChild(document.createElement('br'));
+  box.appendChild(line); // .log-line is block-level — a <br> here double-spaced every entry
   box.scrollTop = box.scrollHeight;
 }
 
@@ -754,18 +753,39 @@ function clearQueue() {
   scanAll();
   toast(`Cleared ${n} item${n !== 1 ? 's' : ''}`, 'success');
 }
+// The input card is a large drop target until something is queued, then
+// collapses to a compact row so the queue gets the room.
 function updateInputDisplay() {
   const el = $('input-path-display');
+  $('dropzone').dataset.empty = String(!queue.length);
   if (!queue.length) { el.textContent = 'No images or folder selected'; el.classList.remove('filled'); $('btn-scan').disabled = true; return; }
   el.classList.add('filled');
   el.textContent = queue.length === 1 ? queue[0] : `${queue.length} items selected`;
-  $('btn-scan').disabled = false;
+  $('btn-scan').disabled = pipelineRunning;
 }
+
+// The queue chip carries what a separate "scan results" card used to: image
+// count and size, with the per-format breakdown on hover.
+function updateQueueChip() {
+  const chip = $('queue-count');
+  if (!scannedImages.length) {
+    chip.textContent = `${queue.length} item${queue.length !== 1 ? 's' : ''}`;
+    chip.removeAttribute('title');
+    return;
+  }
+  const n = scannedImages.length;
+  const size = scannedImages.reduce((a, img) => a + img.size, 0);
+  const types = {};
+  for (const img of scannedImages) { const ext = (img.ext || '.?').replace('.', '').toUpperCase(); types[ext] = (types[ext] || 0) + 1; }
+  chip.textContent = `${numFmt(n)} image${n !== 1 ? 's' : ''} · ${byteFmt(size)}`;
+  chip.title = Object.entries(types).map(([ext, count]) => `${ext} ${count}`).join(' · ');
+}
+
 function renderQueue() {
   const card = $('queue-card'), list = $('queue-list');
   if (!queue.length) { card.classList.add('hidden'); list.innerHTML = ''; return; }
   card.classList.remove('hidden');
-  $('queue-count').textContent = `${queue.length} item${queue.length !== 1 ? 's' : ''}`;
+  updateQueueChip();
   list.innerHTML = '';
   for (const p of queue) {
     const isFile = isImagePath(p);
@@ -792,7 +812,6 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;
 async function scanAll() {
   if (!queue.length) {
     scannedImages = [];
-    $('scan-results-card').classList.add('hidden');
     $('btn-start').disabled = true;
     $('stats-row').classList.add('hidden');
     refreshIdleDock(true);
@@ -801,16 +820,18 @@ async function scanAll() {
   const btn = $('btn-scan');
   const token = ++scanToken;
   btn.disabled = true;
+  btn.classList.add('is-busy');
+  $('queue-count').textContent = 'Scanning…';
   const r = await window.pixelforge.scanInputs(queue, settings.recursive);
   if (token !== scanToken) return;
   pathCounts = r.perPath || {};
   const all = r.images || [];
   scannedImages = all;
-  btn.disabled = false;
+  btn.disabled = pipelineRunning;
+  btn.classList.remove('is-busy');
   renderQueue();
 
   if (!all.length) {
-    $('scan-results-card').classList.add('hidden');
     $('btn-start').disabled = true;
     $('stats-row').classList.add('hidden');
     toast('No supported images found in the selection', 'error');
@@ -818,13 +839,6 @@ async function scanAll() {
     return;
   }
 
-  $('scan-count').textContent = numFmt(all.length);
-  const totalSize = all.reduce((a, img) => a + img.size, 0);
-  $('scan-size-text').textContent = `Total size: ${byteFmt(totalSize)}`;
-  const types = {};
-  all.forEach(img => { const ext = (img.ext || '.?').replace('.', '').toUpperCase(); types[ext] = (types[ext] || 0) + 1; });
-  $('scan-type-pills').innerHTML = Object.entries(types).map(([ext, n]) => `<span class="type-pill">${ext} (${n})</span>`).join('');
-  $('scan-results-card').classList.remove('hidden');
   $('btn-start').disabled = pipelineRunning;
   // Stats describe a run; a row of zeros before anything has run is just noise.
   if (!pipelineRunning) $('stats-row').classList.add('hidden');
@@ -1071,7 +1085,8 @@ function onPipelineDone(result) {
   lastRunDir = result.compressedDir || result.upscaledDir || '';
   finishRun('done', result);
   updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, null);
-  $('stat-saved').textContent = result.savedPct == null ? '—' : `${result.savedPct}%`;
+  // Compression can't shrink every file; "−3%" reads like a bug, "None" doesn't.
+  $('stat-saved').textContent = result.savedPct == null ? '—' : result.savedPct > 0 ? `${result.savedPct}%` : 'None';
   // During a run the rate is per stage; once finished, the whole run's rate is
   // the honest number — compression alone is far faster than upscaling.
   const processed = Math.max(result.upscaledCount || 0, result.compressedCount || 0);

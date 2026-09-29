@@ -193,14 +193,18 @@
               <button class="seg-btn" data-mode="compress">Compress only</button>
             </div>
           </div>
-          <div class="dropzone" id="dropzone">
-            <div class="folder-row" style="padding:8px;">
+          <div class="dropzone" id="dropzone" data-empty="true">
+            <div class="dz-hero">
+              <div class="dz-icon"><svg width="26" height="26"><use href="#ic-image"/></svg></div>
+              <div class="dz-title">Drop images or folders here</div>
+              <div class="dz-text">Or choose them below. Everything is processed on this PC.</div>
+            </div>
+            <div class="folder-row">
               <div class="folder-display" id="input-path-display">No images or folder selected</div>
               <button class="btn btn-secondary" id="btn-browse"><svg width="13" height="13"><use href="#ic-folder-open"/></svg> Folder</button>
               <button class="btn btn-secondary" id="btn-browse-files"><svg width="13" height="13"><use href="#ic-image"/></svg> Images</button>
-              <button class="btn btn-ghost" id="btn-scan" disabled><svg width="13" height="13"><use href="#ic-scan"/></svg> Scan</button>
             </div>
-            <div class="dz-hint">Drag &amp; drop folders or individual images here, or use the buttons</div>
+            <div class="dz-hint">JPG · PNG · WebP · BMP · TIFF</div>
           </div>
         </div>
 
@@ -210,20 +214,10 @@
             <span class="card-header-title">Input Queue</span>
             <span class="count-chip" id="queue-count">0</span>
             <span class="card-header-spacer"></span>
+            <button class="icon-btn" id="btn-scan" title="Rescan folders" aria-label="Rescan folders" disabled><svg width="13" height="13"><use href="#ic-refresh"/></svg></button>
             <button class="btn btn-ghost btn-sm" id="btn-clear-queue"><svg width="12" height="12"><use href="#ic-trash"/></svg> Clear all</button>
           </div>
           <div class="queue-list" id="queue-list"></div>
-        </div>
-
-        <div class="card mb-12 hidden" id="scan-results-card">
-          <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-scan"/></svg><span class="card-header-title">Scan Results</span></div>
-          <div class="scan-result">
-            <div><div class="scan-count" id="scan-count">0</div><div class="scan-sub">Images Found</div></div>
-            <div style="flex:1;padding-left:18px;border-left:1px solid var(--border-1);">
-              <div class="scan-detail" id="scan-size-text">—</div>
-              <div class="type-pills" id="scan-type-pills"></div>
-            </div>
-          </div>
         </div>
 
         <div class="card mb-12 hidden" id="progress-card">
@@ -253,7 +247,7 @@
           <div class="stat-card"><div class="stat-val" id="stat-input">0</div><div class="stat-lbl">Input Images</div></div>
           <div class="stat-card"><div class="stat-val" id="stat-upscaled">0</div><div class="stat-lbl">Upscaled</div></div>
           <div class="stat-card"><div class="stat-val" id="stat-compressed">0</div><div class="stat-lbl">Compressed</div></div>
-          <div class="stat-card"><div class="stat-val" id="stat-saved">—</div><div class="stat-lbl">Space Saved</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-saved">—</div><div class="stat-lbl">Saved by Compression</div></div>
         </div>
 
         <div class="card mb-12 hidden" id="results-card">
@@ -502,6 +496,15 @@
 </div>
 
 <div id="toast-stack"></div>
+
+<!-- Shown while files are dragged over any part of the window -->
+<div id="drop-overlay" aria-hidden="true">
+  <div class="drop-overlay-inner">
+    <div class="dz-icon"><svg width="28" height="28"><use href="#ic-download"/></svg></div>
+    <div class="drop-overlay-title">Drop to add to the queue</div>
+    <div class="drop-overlay-sub">Folders and JPG, PNG, WebP, BMP or TIFF images</div>
+  </div>
+</div>
 
 <script src="renderer.js"></script>
 </body>

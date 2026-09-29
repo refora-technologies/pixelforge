@@ -329,15 +329,63 @@ body {
 }
 .dropzone.dragover { border-color: var(--accent); background: var(--accent-muted); }
 .dropzone.dragover::after { border-color: var(--accent); opacity: 1; }
-.folder-row { display: flex; align-items: center; gap: 8px; }
+.folder-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px; }
 .folder-display {
   flex: 1; padding: 9px 12px; background: var(--panel); border: 1px solid var(--border-1);
   border-radius: var(--radius-sm); font-size: 12px; font-family: var(--mono); color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: border-color var(--transition), color var(--transition);
 }
 .folder-display.filled { color: var(--text-2); border-color: var(--border-2); }
-.dz-hint { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; font-size: 11px; color: var(--text-3); letter-spacing: 0.04em; }
+.dz-hint { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 2px 11px 11px; font-size: 10px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-3); }
 .dropzone.dragover .dz-hint { color: var(--accent-soft); }
+
+/* Empty queue: a proper drop target, not a thin bar */
+.dz-hero { display: none; position: relative; text-align: center; padding: 30px 20px 4px; }
+.dropzone[data-empty="true"] .dz-hero { display: block; }
+.dropzone[data-empty="true"] .folder-display { display: none; }
+.dropzone[data-empty="true"] .folder-row { justify-content: center; padding: 16px 8px 12px; }
+.dropzone[data-empty="false"] .dz-hint { display: none; }
+.dz-icon {
+  width: 58px; height: 58px; margin: 0 auto; border-radius: 17px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-soft); background: var(--accent-muted); border: 1px solid var(--border-accent);
+  animation: float-y 5s ease-in-out infinite;
+}
+@keyframes float-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.dz-title { margin-top: 15px; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-1); }
+.dz-text { margin-top: 4px; font-size: 12.5px; color: var(--text-3); }
+
+/* Whole-window drop target while files are dragged over the app */
+#drop-overlay {
+  position: fixed; inset: 40px 0 0 0; z-index: 350; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--accent-rgb), 0.08); backdrop-filter: blur(3px);
+  opacity: 0; transition: opacity 0.16s var(--ease);
+}
+#drop-overlay::before {
+  content: ''; position: absolute; inset: 16px; border-radius: var(--radius-xl);
+  border: 2px dashed rgba(var(--accent-rgb), 0.7);
+}
+body.drag-active #drop-overlay { opacity: 1; }
+.drop-overlay-inner {
+  position: relative; text-align: center; padding: 28px 40px; border-radius: var(--radius-xl);
+  background: var(--panel-2); border: 1px solid var(--border-accent); box-shadow: var(--shadow-lift);
+  transform: scale(0.96); transition: transform 0.24s var(--spring);
+}
+body.drag-active .drop-overlay-inner { transform: none; }
+.drop-overlay-title { margin-top: 14px; font-size: 16px; font-weight: 700; color: var(--text-1); }
+.drop-overlay-sub { margin-top: 3px; font-size: 12px; color: var(--text-3); }
+
+/* Small square icon button, e.g. rescan in a card header */
+.icon-btn {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-1); border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--border-2); }
+.icon-btn:disabled { opacity: 0.4; pointer-events: none; }
+.icon-btn.is-busy svg { animation: spin 0.9s linear infinite; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ─── Queue ─────────────────────────────────────────────────────────────────── */
 .count-chip {
@@ -366,13 +414,6 @@ body {
 .queue-item-remove:hover { background: rgba(244,63,94,0.15); color: var(--red-text); transform: scale(1.08); }
 .queue-item-remove:active { transform: scale(0.94); }
 
-/* ─── Scan summary ──────────────────────────────────────────────────────────── */
-.scan-result { display: flex; align-items: center; gap: 18px; padding: 15px 17px; background: var(--panel-2); border: 1px solid var(--border-1); border-radius: var(--radius-md); }
-.scan-count { font-size: 38px; font-weight: 800; letter-spacing: -0.045em; color: var(--text-1); line-height: 1; }
-.scan-sub { font-size: 9.5px; font-weight: 700; letter-spacing: 0.18em; color: var(--text-3); text-transform: uppercase; margin-top: 4px; }
-.scan-detail { font-size: 12px; color: var(--text-3); }
-.type-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
-.type-pill { padding: 3px 9px; border-radius: 6px; background: var(--accent-muted); border: 1px solid rgba(var(--accent-rgb), 0.2); font-size: 10.5px; font-weight: 700; color: var(--accent-soft); }
 
 /* ─── Status badge ──────────────────────────────────────────────────────────── */
 .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; transition: all var(--transition); }
