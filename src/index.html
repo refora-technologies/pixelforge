@@ -222,13 +222,6 @@
           </div>
         </div>
 
-        <div class="run-controls">
-          <button class="btn-start" id="btn-start" disabled><svg width="14" height="14"><use href="#ic-play"/></svg> Start Pipeline</button>
-          <button class="btn btn-secondary hidden" id="btn-pause"><svg width="13" height="13"><use href="#ic-pause"/></svg> Pause</button>
-          <button class="btn btn-secondary hidden" id="btn-resume"><svg width="13" height="13"><use href="#ic-play"/></svg> Resume</button>
-          <button class="btn btn-danger hidden" id="btn-cancel"><svg width="12" height="12"><use href="#ic-stop"/></svg> Cancel</button>
-        </div>
-
         <div class="card mb-12 hidden" id="progress-card">
           <div class="card-header"><svg class="card-header-icon" width="14" height="14"><use href="#ic-upscale"/></svg><span class="card-header-title">Pipeline Progress</span></div>
           <div class="pipeline-stages">
@@ -269,6 +262,15 @@
           </div>
           <div class="gallery-grid" id="gallery-grid"></div>
           <div class="gallery-more hidden" id="gallery-more"></div>
+          <div class="issues hidden" id="results-issues">
+            <div class="issues-head">
+              <span class="issues-icon"><svg width="14" height="14"><use href="#ic-warn"/></svg></span>
+              <span class="issues-title" id="issues-title"></span>
+              <span class="card-header-spacer"></span>
+              <button class="btn btn-ghost btn-sm" id="btn-issues-log"><svg width="12" height="12"><use href="#ic-external"/></svg> View log</button>
+            </div>
+            <ul class="issues-list" id="issues-list"></ul>
+          </div>
         </div>
 
         <div class="card" id="output-folders-card">
@@ -283,6 +285,27 @@
               <div class="folder-tile-icon"><svg width="18" height="18"><use href="#ic-compress"/></svg></div>
               <div class="folder-tile-info"><div class="folder-tile-name">Compressed Images</div><div class="folder-tile-path" id="path-compressed-display">—</div></div>
               <span class="folder-tile-arrow"><svg width="13" height="13"><use href="#ic-arrow-right"/></svg></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sticky run dock: always in view, whatever the scroll position -->
+        <div class="run-dock" id="run-dock" data-state="empty">
+          <div class="run-dock-panel">
+            <div class="dock-info">
+              <div class="dock-line">
+                <span class="dock-title" id="dock-title">Add images to get started</span>
+                <span class="dock-meta" id="dock-meta"></span>
+              </div>
+              <div class="dock-sub" id="dock-sub">Drop folders or images anywhere in this window, or use Folder and Images above.</div>
+              <div class="dock-progress"><div class="progress-fill" id="dock-bar" style="width:0%"></div></div>
+            </div>
+            <div class="dock-actions">
+              <button class="btn btn-ghost hidden" id="btn-dock-open"><svg width="13" height="13"><use href="#ic-folder-open"/></svg> Open output</button>
+              <button class="btn btn-secondary hidden" id="btn-pause"><svg width="13" height="13"><use href="#ic-pause"/></svg> Pause</button>
+              <button class="btn btn-secondary hidden" id="btn-resume"><svg width="13" height="13"><use href="#ic-play"/></svg> Resume</button>
+              <button class="btn btn-danger hidden" id="btn-cancel"><svg width="12" height="12"><use href="#ic-stop"/></svg> Cancel</button>
+              <button class="btn-start" id="btn-start" disabled><svg width="14" height="14"><use href="#ic-play"/></svg> <span id="btn-start-label">Start</span></button>
             </div>
           </div>
         </div>

@@ -20,6 +20,8 @@ let scanToken = 0;
 let cmpPos = 50;
 let cmpFullscreen = false;
 let lastLoggedProgress = '';
+let runPaused = false;
+let lastProgress = null;
 
 const $ = (id) => document.getElementById(id);
 const numFmt = (n) => Number(n).toLocaleString();
@@ -433,6 +435,7 @@ async function loadModels(currentModel) {
     if (currentModel) sel.value = currentModel;
     if (!sel.value && sel.options.length) sel.selectedIndex = 0;
     sel._pfSync?.();
+    refreshIdleDock(); // the summary names the model
   } catch (e) { console.error('loadModels', e); }
 }
 
@@ -590,14 +593,18 @@ function wireDashboard() {
   $('btn-cancel').addEventListener('click', onCancel);
   $('btn-open-upscaled').addEventListener('click', () => window.pixelforge.openFolder(appPaths.upscaled));
   $('btn-open-compressed').addEventListener('click', () => window.pixelforge.openFolder(appPaths.compressed));
-  $('btn-open-run').addEventListener('click', () => {
+  const openRun = () => {
     const target = lastRunDir || appPaths.compressed || appPaths.upscaled;
     if (target) window.pixelforge.openFolder(target);
-  });
+  };
+  $('btn-open-run').addEventListener('click', openRun);
+  $('btn-dock-open').addEventListener('click', openRun);
 
   document.querySelectorAll('#mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => {
+    if (pipelineRunning) return;
     setMode(b.dataset.mode);
     window.pixelforge.saveSettings({ pipelineMode: pipelineMode });
+    refreshIdleDock(true);
   }));
 
   wireWindowDrop();
@@ -646,13 +653,16 @@ function setOutputMode(mode) {
   $('output-mode-desc').textContent = outputMode === 'keep'
     ? 'Every run lands in its own timestamped folder'
     : 'Each run replaces the last one';
+  refreshIdleDock();
 }
 
 async function onBrowse() {
+  if (pipelineRunning) { toast('Wait for the current run to finish before adding more.', 'info'); return; }
   const folders = await window.pixelforge.selectFolders();
   if (folders && folders.length) addPaths(folders, true);
 }
 async function onAddImages() {
+  if (pipelineRunning) { toast('Wait for the current run to finish before adding more.', 'info'); return; }
   const files = await window.pixelforge.selectImages();
   if (files && files.length) addPaths(files, true);
 }
@@ -732,7 +742,10 @@ function renderQueue() {
       `<div class="queue-item-info"><div class="queue-item-name">${escapeHtml(name)}</div>` +
       `<div class="queue-item-meta">${escapeHtml(meta)}</div></div>` +
       `<button class="queue-item-remove" title="Remove from queue"><svg width="14" height="14"><use href="#ic-trash"/></svg></button>`;
-    item.querySelector('.queue-item-remove').addEventListener('click', () => removePath(p));
+    const remove = item.querySelector('.queue-item-remove');
+    remove.disabled = pipelineRunning;
+    remove.setAttribute('aria-label', `Remove ${name} from the queue`);
+    remove.addEventListener('click', () => { if (!pipelineRunning) removePath(p); });
     list.appendChild(item);
   }
 }
@@ -744,6 +757,7 @@ async function scanAll() {
     $('scan-results-card').classList.add('hidden');
     $('btn-start').disabled = true;
     $('stats-row').classList.add('hidden');
+    refreshIdleDock(true);
     return;
   }
   const btn = $('btn-scan');
@@ -762,6 +776,7 @@ async function scanAll() {
     $('btn-start').disabled = true;
     $('stats-row').classList.add('hidden');
     toast('No supported images found in the selection', 'error');
+    refreshIdleDock(true);
     return;
   }
 
@@ -773,12 +788,133 @@ async function scanAll() {
   $('scan-type-pills').innerHTML = Object.entries(types).map(([ext, n]) => `<span class="type-pill">${ext} (${n})</span>`).join('');
   $('scan-results-card').classList.remove('hidden');
   $('btn-start').disabled = pipelineRunning;
-  // Mid-run the counters belong to the run in progress; don't zero them.
-  if (!pipelineRunning) {
-    updateStats(all.length, 0, 0, null);
-    $('stat-saved').textContent = '—';
+  // Stats describe a run; a row of zeros before anything has run is just noise.
+  if (!pipelineRunning) $('stats-row').classList.add('hidden');
+  refreshIdleDock(true);
+}
+
+// ─── Run dock ───────────────────────────────────────────────────────────────
+// One always-visible bar that says what will happen, what is happening, and
+// what just happened. It owns the Start / Pause / Resume / Cancel buttons.
+const MODE_LABELS = { both: 'Upscale + Compress', upscale: 'Upscale only', compress: 'Compress only' };
+// Matches the taskbar weighting in main.js: upscaling is most of the run time.
+const STAGE_WEIGHTS = {
+  both: { upscaling: [0, 0.85], compressing: [0.85, 0.15] },
+  upscale: { upscaling: [0, 1] },
+  compress: { compressing: [0, 1] },
+};
+
+function runFraction(data) {
+  if (data.stage === 'complete') return 1;
+  const span = (STAGE_WEIGHTS[pipelineMode] || STAGE_WEIGHTS.both)[data.stage];
+  return span ? span[0] + span[1] * Math.min(1, (data.percent || 0) / 100) : null;
+}
+
+function modelLabel() {
+  const opt = $('set-upscayl-model')?.selectedOptions?.[0];
+  return (opt?.textContent || settings.upscaylModel || '').replace(/\s*\([^)]*\)\s*$/, '');
+}
+
+function runSummary() {
+  const parts = [MODE_LABELS[pipelineMode] || MODE_LABELS.both];
+  if (pipelineMode !== 'compress') parts.push(`${modelLabel()} · ${settings.upscaylScale || 4}× ${String(settings.upscaylFormat || 'png').toUpperCase()}`);
+  if (pipelineMode !== 'upscale') parts.push(settings.caesiumLossless ? 'Lossless' : `Quality ${settings.caesiumQuality ?? 82}`);
+  parts.push(outputMode === 'keep' ? 'Keeps previous results' : 'Replaces previous results');
+  return parts.join(' · ');
+}
+
+function setDock(state, { title, meta = '', sub = '', subHtml = null, progress = null } = {}) {
+  $('run-dock').dataset.state = state;
+  $('dock-title').textContent = title;
+  $('dock-meta').textContent = meta;
+  if (subHtml !== null) $('dock-sub').innerHTML = subHtml;
+  else $('dock-sub').textContent = sub;
+  if (progress !== null) $('dock-bar').style.width = `${Math.round(progress * 1000) / 10}%`;
+
+  const active = state === 'running' || state === 'paused';
+  $('btn-start').classList.toggle('hidden', active);
+  $('btn-pause').classList.toggle('hidden', state !== 'running');
+  $('btn-resume').classList.toggle('hidden', state !== 'paused');
+  $('btn-cancel').classList.toggle('hidden', !active);
+  $('btn-dock-open').classList.toggle('hidden', state !== 'done' || !lastRunDir);
+  $('btn-start-label').textContent = state === 'done' ? 'Run again' : 'Start';
+}
+
+// The resting state, derived from the queue. Doesn't overwrite a run's outcome
+// until the queue or the run settings change.
+function refreshIdleDock(force = false) {
+  if (pipelineRunning) return;
+  const state = $('run-dock').dataset.state;
+  if (!force && ['done', 'cancelled', 'error'].includes(state)) return;
+  if (!queue.length) {
+    setDock('empty', { title: 'Add images to get started', sub: 'Drop folders or images anywhere in this window, or use Folder and Images above.', progress: 0 });
+    return;
   }
-  $('stats-row').classList.remove('hidden');
+  if (!scannedImages.length) {
+    setDock('empty', { title: 'No supported images found', sub: 'PixelForge works with JPG, PNG, WebP, BMP and TIFF images.', progress: 0 });
+    return;
+  }
+  const n = scannedImages.length;
+  const size = scannedImages.reduce((a, img) => a + img.size, 0);
+  setDock('ready', {
+    title: `${numFmt(n)} image${n !== 1 ? 's' : ''} ready`,
+    meta: byteFmt(size),
+    subHtml: `${escapeHtml(runSummary())} · <button class="dock-link" id="dock-change">Change</button>`,
+    progress: 0,
+  });
+  $('dock-change').onclick = () => navigateTo('settings');
+}
+
+function updateRunDock(data) {
+  if (!pipelineRunning || !data) return;
+  const fraction = runFraction(data);
+  const count = data.total ? `${numFmt(Math.min(data.current || 0, data.total))} of ${numFmt(data.total)}` : '';
+  if (runPaused) {
+    setDock('paused', { title: 'Paused', meta: count, sub: 'Picks up from the next batch when you resume.', progress: fraction });
+    return;
+  }
+  const upscaling = data.stage !== 'compressing';
+  const steps = pipelineMode === 'both' ? `Step ${upscaling ? 1 : 2} of 2 · ` : '';
+  const detail = upscaling
+    ? `${modelLabel()} · ${settings.upscaylScale || 4}×`
+    : (settings.caesiumLossless ? 'Lossless' : `Quality ${settings.caesiumQuality ?? 82}`);
+  const eta = data.etaMs > 0 ? ` · ${fmtDuration(data.etaMs)} left` : '';
+  setDock('running', {
+    title: upscaling ? 'Upscaling' : 'Compressing',
+    meta: count + eta,
+    sub: steps + detail,
+    progress: fraction,
+  });
+}
+
+function renderIssues(result) {
+  const box = $('results-issues');
+  const failures = result.failures || [];
+  if (!failures.length) { box.classList.add('hidden'); return; }
+  const n = failures.length;
+  $('issues-title').textContent = `${n} image${n !== 1 ? 's' : ''} couldn't be processed`;
+  const list = $('issues-list');
+  list.innerHTML = '';
+  for (const f of failures.slice(0, 100)) {
+    const li = document.createElement('li');
+    li.title = `${f.path}\n${f.reason}`;
+    const name = document.createElement('span');
+    name.className = 'issue-name';
+    name.textContent = f.path.split(/[\\/]/).pop();
+    const reason = document.createElement('span');
+    reason.className = 'issue-reason';
+    reason.textContent = f.reason;
+    li.append(name, reason);
+    list.appendChild(li);
+  }
+  if (n > 100) {
+    const li = document.createElement('li');
+    li.textContent = `…and ${numFmt(n - 100)} more. The log has the full list.`;
+    list.appendChild(li);
+  }
+  $('btn-issues-log').onclick = () => (result.logPath ? window.pixelforge.openFile(result.logPath) : window.pixelforge.openLogs());
+  box.classList.remove('hidden');
+  $('results-card').classList.remove('hidden');
 }
 
 // ─── Pipeline run ───────────────────────────────────────────────────────────
@@ -786,16 +922,22 @@ async function onStartPipeline() {
   if (!queue.length || !scannedImages.length || pipelineRunning) return;
   setRunningUI(true, false);
   lastLoggedProgress = '';
+  lastProgress = null;
   $('progress-card').classList.remove('hidden');
   $('results-card').classList.add('hidden');
+  $('results-issues').classList.add('hidden');
   $('pipeline-log').innerHTML = '';
 
   resetStage('upscaling');
   resetStage('compressing');
   if (pipelineMode === 'upscale') setStageSkipped('compressing');
   if (pipelineMode === 'compress') setStageSkipped('upscaling');
+  updateStats(scannedImages.length, 0, 0, null);
+  $('stat-saved').textContent = '—';
+  $('stats-row').classList.remove('hidden');
 
   setBadge('pipeline-status-badge', 'running', 'Processing…');
+  setDock('running', { title: 'Starting…', meta: '', sub: runSummary(), progress: 0 });
   startElapsed();
   log(`Pipeline started — ${scannedImages.length} images, mode: ${pipelineMode}`, 'log-hl');
 
@@ -808,31 +950,51 @@ async function onStartPipeline() {
     if (result && !result.success && !result.cancelled && pipelineRunning) {
       log('Error: ' + (result.error || 'Unknown error'), 'log-err');
       toast(result.error || 'Pipeline failed', 'error', 6000);
-      finishRun('error');
+      finishRun('error', result.error);
     }
   } catch (err) {
     log('Error: ' + err.message, 'log-err');
     toast(err.message, 'error', 6000);
-    finishRun('error');
+    finishRun('error', err.message);
   }
 }
-async function onPause() { await window.pixelforge.pausePipeline(); setRunningUI(true, true); setBadge('pipeline-status-badge', 'paused', 'Paused'); log('Paused — finishing current step…', 'log-warn'); }
-async function onResume() { await window.pixelforge.resumePipeline(); setRunningUI(true, false); setBadge('pipeline-status-badge', 'running', 'Processing…'); log('Resumed.', 'log-hl'); }
-async function onCancel() { await window.pixelforge.cancelPipeline(); log('Cancelling…', 'log-warn'); }
+async function onPause() {
+  await window.pixelforge.pausePipeline();
+  setRunningUI(true, true);
+  setBadge('pipeline-status-badge', 'paused', 'Paused');
+  log('Pausing after the current batch…', 'log-warn');
+  updateRunDock(lastProgress || { stage: 'upscaling', percent: 0 });
+}
+async function onResume() {
+  await window.pixelforge.resumePipeline();
+  setRunningUI(true, false);
+  setBadge('pipeline-status-badge', 'running', 'Processing…');
+  log('Resumed.', 'log-hl');
+  updateRunDock(lastProgress || { stage: 'upscaling', percent: 0 });
+}
+async function onCancel() {
+  await window.pixelforge.cancelPipeline();
+  log('Cancelling…', 'log-warn');
+  $('dock-title').textContent = 'Cancelling…';
+}
 
+// While a run is going its inputs are fixed — the running job has its own copy,
+// so edits here would silently do nothing.
 function setRunningUI(running, paused) {
   pipelineRunning = running;
+  runPaused = !!paused;
+  document.body.classList.toggle('is-running', running);
   $('btn-start').disabled = running || !scannedImages.length;
-  $('btn-pause').classList.toggle('hidden', !running || paused);
-  $('btn-resume').classList.toggle('hidden', !running || !paused);
-  $('btn-cancel').classList.toggle('hidden', !running);
-  $('btn-clear-queue').disabled = running;
+  for (const id of ['btn-browse', 'btn-browse-files', 'btn-clear-queue']) $(id).disabled = running;
+  document.querySelectorAll('#mode-seg .seg-btn, .queue-item-remove').forEach(b => { b.disabled = running; });
   $('btn-scan').disabled = running || !queue.length;
 }
 
 function onPipelineProgress(data) {
   const { stage, percent = 0, message = '', status, current } = data;
-  if (data.elapsedMs !== undefined) updateTiming(data.elapsedMs, data.etaMs, data.throughput);
+  // The final "complete" event carries no throughput; keep the last real figure.
+  if (data.elapsedMs !== undefined && stage !== 'complete') updateTiming(data.elapsedMs, data.etaMs, data.throughput);
+  if (stage === 'upscaling' || stage === 'compressing') { lastProgress = data; updateRunDock(data); }
 
   // `produced` counts files actually written; `current` also counts failures.
   const made = data.produced ?? current;
@@ -862,33 +1024,60 @@ function onPipelineProgress(data) {
     setBadge('pipeline-status-badge', 'error', 'Error');
     log('Error: ' + message, 'log-err');
     toast(message, 'error', 6000);
-    finishRun('error');
+    finishRun('error', message);
   }
 }
 
 function onPipelineDone(result) {
-  finishRun('done');
   lastResults = result.results || [];
   lastRunDir = result.compressedDir || result.upscaledDir || '';
+  finishRun('done', result);
   updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, null);
   $('stat-saved').textContent = result.savedPct == null ? '—' : `${result.savedPct}%`;
+  // During a run the rate is per stage; once finished, the whole run's rate is
+  // the honest number — compression alone is far faster than upscaling.
+  const processed = Math.max(result.upscaledCount || 0, result.compressedCount || 0);
+  if (processed && result.durationMs > 0) $('timing-rate').textContent = (processed / (result.durationMs / 60000)).toFixed(1);
+  $('timing-eta').textContent = '—';
   renderGallery(lastResults);
+  renderIssues(result);
+  if (!$('results-card').classList.contains('hidden')) {
+    $('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
-  const done = result.compressedCount || result.upscaledCount || 0;
-  const saved = result.savedPct > 0 ? ` · saved ${result.savedPct}%` : '';
-  toast(`Finished ${done} image${done !== 1 ? 's' : ''} in ${fmtDuration(result.durationMs)}${saved}`, 'success', 5200);
+  // The dock already says this on the dashboard; toast only when it's out of view.
+  if (!$('page-dashboard').classList.contains('active')) {
+    const done = result.compressedCount || result.upscaledCount || 0;
+    const saved = result.savedPct > 0 ? ` · saved ${result.savedPct}%` : '';
+    toast(`Finished ${done} image${done !== 1 ? 's' : ''} in ${fmtDuration(result.durationMs)}${saved}`, 'success', 5200);
+  }
   if (result.failedCount) {
-    const n = result.failedCount;
-    toast(`${n} image${n !== 1 ? 's' : ''} couldn't be processed — the rest finished normally. Details are in the log.`, 'error', 8000);
     for (const f of result.failures || []) log(`Failed: ${f.path.split(/[\\/]/).pop()} — ${f.reason}`, 'log-err');
   }
   if (settings.soundOnComplete) playChime();
 }
 
-function finishRun(kind) {
+function finishRun(kind, detail) {
   setRunningUI(false, false);
   stopElapsed();
   if (kind === 'error') setBadge('pipeline-status-badge', 'error', 'Error');
+
+  if (kind === 'done') {
+    const result = detail || {};
+    const n = result.compressedCount || result.upscaledCount || 0;
+    const failed = result.failedCount || 0;
+    const folder = lastRunDir ? lastRunDir.split(/[\\/]/).filter(Boolean).slice(-2).join('\\') : 'the output folder';
+    setDock('done', {
+      title: `Finished ${numFmt(n)} image${n !== 1 ? 's' : ''} in ${fmtDuration(result.durationMs)}`,
+      meta: result.savedPct > 0 ? `Saved ${result.savedPct}%` : '',
+      sub: failed ? `${failed} couldn't be processed — details below.` : `Saved to ${folder}`,
+      progress: 1,
+    });
+  } else if (kind === 'cancelled') {
+    setDock('cancelled', { title: 'Run cancelled', sub: 'Anything finished before you cancelled is already in the output folder.', progress: 0 });
+  } else if (kind === 'error') {
+    setDock('error', { title: 'Run failed', sub: detail || 'Something went wrong. The log has details.', progress: 0 });
+  }
 }
 
 // ─── Timing ─────────────────────────────────────────────────────────────────
@@ -1119,6 +1308,7 @@ async function onResetSettings() {
   await loadGpus(settings.upscaylGpu);
   appPaths = await window.pixelforge.getAppPaths();
   updateOutputPathDisplays();
+  refreshIdleDock();
   toast('Settings reset to defaults', 'success');
 }
 
@@ -1193,6 +1383,7 @@ async function onSaveSettings() {
   btn.innerHTML = '<svg width="13" height="13"><use href="#ic-check"/></svg> Saved';
   btn.disabled = true;
   setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1600);
+  refreshIdleDock();
   toast('Settings saved', 'success');
 }
 

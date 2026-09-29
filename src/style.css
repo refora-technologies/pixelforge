@@ -374,8 +374,56 @@ body {
 .status-badge.error { background: var(--red-muted); color: var(--red); border: 1px solid rgba(244,63,94,0.25); }
 .status-badge.cancelled { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
 
-/* ─── Run controls ──────────────────────────────────────────────────────────── */
-.run-controls { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 22px 0; }
+/* ─── Run dock ──────────────────────────────────────────────────────────────── */
+/* The dashboard fills the viewport so the dock rests at the bottom even when
+   there's little above it, and sticks there once the page scrolls. */
+#page-dashboard.active { display: flex; flex-direction: column; min-height: 100%; }
+.run-dock {
+  /* Chromium measures sticky offsets inside the scroller's padding, so this
+     cancels #content's bottom padding to sit flush with the window edge. */
+  position: sticky; bottom: -34px; z-index: 20;
+  margin: auto -28px -34px;           /* span the content padding, sit flush */
+  padding: 26px 28px 20px;
+  background: linear-gradient(to top, var(--backdrop-base) 58%, transparent);
+  pointer-events: none;
+}
+.run-dock-panel {
+  pointer-events: auto; position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 18px;
+  padding: 13px 14px 13px 20px;
+  background: var(--panel-2); border: 1px solid var(--border-2); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  transition: border-color var(--transition);
+}
+.run-dock[data-state="ready"] .run-dock-panel { border-color: var(--border-accent); }
+.run-dock[data-state="done"] .run-dock-panel { border-color: rgba(34,197,94,0.3); }
+.run-dock[data-state="error"] .run-dock-panel { border-color: rgba(244,63,94,0.35); }
+.run-dock[data-state="error"] .dock-sub { color: var(--red); }
+.dock-info { flex: 1; min-width: 0; }
+.dock-line { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.dock-title { font-size: 14.5px; font-weight: 700; letter-spacing: -0.015em; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-meta { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dock-sub { font-size: 11.5px; color: var(--text-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent-soft); cursor: pointer; font-weight: 600; }
+.dock-link:hover { text-decoration: underline; }
+.dock-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* A hairline of progress along the dock's bottom edge */
+.dock-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; opacity: 0; transition: opacity 0.3s var(--ease); }
+.dock-progress .progress-fill { border-radius: 0; }
+.run-dock[data-state="running"] .dock-progress,
+.run-dock[data-state="paused"] .dock-progress,
+.run-dock[data-state="done"] .dock-progress { opacity: 1; }
+.run-dock[data-state="paused"] .dock-progress .progress-fill { background: var(--yellow); }
+.run-dock[data-state="done"] .dock-progress .progress-fill { background: var(--green); }
+.run-dock .btn-start { padding: 12px 30px; font-size: 14px; }
+
+/* Inputs can't change mid-run — the running job has its own copy of them. */
+body.is-running #btn-browse, body.is-running #btn-browse-files, body.is-running #btn-scan,
+body.is-running #btn-clear-queue, body.is-running #mode-seg, body.is-running .queue-item-remove {
+  opacity: 0.38; pointer-events: none;
+}
+body.is-running .queue-list { opacity: 0.72; }
+
 .btn-start {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 10px; padding: 14px 44px;
@@ -471,6 +519,19 @@ body {
 .gallery-action:hover { background: var(--accent); transform: scale(1.1); }
 .gallery-action:active { transform: scale(0.94); }
 .gallery-more { text-align: center; font-size: 11.5px; color: var(--text-3); padding-top: 13px; margin-top: 13px; border-top: 1px solid var(--border-1); }
+
+/* ─── Failures summary ──────────────────────────────────────────────────────── */
+.issues { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-1); }
+.issues-head { display: flex; align-items: center; gap: 8px; }
+.issues-icon { color: var(--yellow); display: flex; }
+.issues-title { font-size: 12.5px; font-weight: 700; color: var(--text-1); }
+.issues-list { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 188px; overflow-y: auto; }
+.issues-list li {
+  display: flex; align-items: baseline; gap: 10px; padding: 8px 11px; border-radius: var(--radius-sm);
+  background: var(--yellow-muted); border: 1px solid rgba(245,158,11,0.22); font-size: 11.5px;
+}
+.issue-name { font-weight: 700; color: var(--text-1); flex-shrink: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue-reason { color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ─── Modals ────────────────────────────────────────────────────────────────── */
 .modal {
@@ -766,7 +827,8 @@ body {
 .stack-table td:first-child { font-weight: 600; color: var(--text-1); }
 
 /* ─── Toasts ────────────────────────────────────────────────────────────────── */
-#toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 400; display: flex; flex-direction: column; gap: 9px; align-items: flex-end; pointer-events: none; }
+/* Top-right, clear of the run dock that owns the bottom of the dashboard. */
+#toast-stack { position: fixed; right: 20px; top: 54px; z-index: 400; display: flex; flex-direction: column; gap: 9px; align-items: flex-end; pointer-events: none; }
 .toast {
   display: flex; align-items: center; gap: 10px; padding: 11px 15px;
   border-radius: var(--radius-md); background: var(--panel-2);
