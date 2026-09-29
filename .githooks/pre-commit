@@ -14,6 +14,7 @@ run() {
 }
 
 run npx --no-install eslint .
+run npx --no-install tsc -p jsconfig.json
 run node tools/test-contract.js
 run node tools/test-unit.js
 run node tools/test-updater.js

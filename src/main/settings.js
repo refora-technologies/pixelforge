@@ -20,6 +20,8 @@ const tileSize = (v) => {
   return Number.isFinite(n) && n >= 0 && n <= 4096 ? String(n) : undefined;
 };
 
+// [store key, setting name, default, sanitiser — undefined means "reject"]
+/** @type {Array<[string, string, () => any, (v: any) => any]>} */
 const SETTINGS_MAP = [
   ['upscayl.model',     'upscaylModel',     () => 'upscayl-standard-4x', str],
   ['upscayl.scale',     'upscaylScale',     () => '4', oneOf(['2', '3', '4'])],
