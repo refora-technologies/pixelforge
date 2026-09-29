@@ -20,6 +20,10 @@ const INPUT = path.join(WORK, 'samples');
 fs.rmSync(WORK, { recursive: true, force: true });
 for (const d of [USER_DATA, INPUT, OUT]) fs.mkdirSync(d, { recursive: true });
 app.setPath('userData', USER_DATA);
+// Windows stops painting a window it believes is covered by another, and
+// capturePage then returns a stale frame. Captures must reflect the live UI.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 const pkgVersion = require(path.join(ROOT, 'package.json')).version;
 app.getVersion = () => pkgVersion;

@@ -22,6 +22,11 @@ const INPUT = path.join(WORK, 'input');
 fs.rmSync(WORK, { recursive: true, force: true });
 for (const d of [USER_DATA, INPUT, OUT]) fs.mkdirSync(d, { recursive: true });
 app.setPath('userData', USER_DATA);
+// Windows stops painting a window it believes is covered by another, and
+// capturePage then returns a stale frame. Captures must reflect the live UI.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 // Reuses the dependencies the installed app already downloaded.
 const realBin = path.join(process.env.APPDATA || '', 'pixelforge', 'bin');
@@ -79,6 +84,8 @@ const js = (code) => win().webContents.executeJavaScript(code, true);
 let shotIndex = 0;
 async function shot(name, settle = 700) {
   await sleep(settle);
+  win().webContents.invalidate();
+  await sleep(120);
   const image = await win().webContents.capturePage();
   const file = path.join(OUT, `${String(++shotIndex).padStart(2, '0')}-${name}.png`);
   const buf = image.toPNG();
@@ -145,6 +152,7 @@ app.whenReady().then(async () => {
     // 6-9 — compare viewer
     await js(`(()=>{const r=lastResults[0];openCompare(r.original,r.upscaled,r.upscaled.split(/[\\\\/]/).pop());})(); null`);
     await waitFor(imagesSettled('#cmp-img-base, #cmp-img-overlay'), 'compare images');
+    await waitFor(`!document.getElementById('compare-modal').classList.contains('hidden')`, 'compare modal visible');
     await js(`setCmpPos(50); null`);
     await shot('compare-split');
 

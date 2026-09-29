@@ -9,6 +9,8 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
+// Shrinks the idle timeout so the stalled-connection case finishes quickly.
+process.env.PF_NET_IDLE_MS = '1500';
 const { downloadFile, fetchText, parseSha256, sha256File, verifyChecksum } = require('../src/main/download');
 
 let passed = 0, failed = 0;
@@ -39,6 +41,14 @@ function startServer() {
       } else if (req.url === '/redirect') {
         res.writeHead(302, { Location: '/PixelForge-Setup.exe' });
         res.end();
+      } else if (req.url === '/stall') {
+        // Sends a little, then goes silent forever.
+        res.writeHead(200, { 'Content-Length': 100000 });
+        res.write(Buffer.alloc(100));
+      } else if (req.url === '/truncated') {
+        // Promises 100 KB, then drops the connection after 100 bytes.
+        res.writeHead(200, { 'Content-Length': 100000 });
+        res.write(Buffer.alloc(100), () => req.socket.destroy());
       } else {
         res.writeHead(404);
         res.end();
@@ -73,6 +83,20 @@ async function main() {
   const viaRedirect = path.join(TMP, 'redirected.exe');
   await downloadFile(`${base}/redirect`, viaRedirect, () => {});
   check('follows redirects', (await sha256File(viaRedirect)) === DIGEST);
+
+  // ── network failures ──
+  console.log('\nnetwork failures');
+  const attempt = (url) => {
+    const started = Date.now();
+    return downloadFile(url, path.join(TMP, `net-${Date.now()}.bin`), () => {})
+      .then(() => ({ ok: true, ms: Date.now() - started }), (err) => ({ ok: false, err: err.message, ms: Date.now() - started }));
+  };
+  const stalled = await attempt(`${base}/stall`);
+  check('stalled connection gives up instead of hanging', !stalled.ok && stalled.ms < 6000, `${stalled.err} after ${stalled.ms}ms`);
+  check('stall error is readable', /timed out/i.test(stalled.err || ''), stalled.err);
+  const truncated = await attempt(`${base}/truncated`);
+  check('truncated download is rejected, not saved', !truncated.ok, truncated.ok ? 'resolved with a partial file' : truncated.err);
+  check('no partial file left behind', !fs.readdirSync(TMP).some(f => f.startsWith('net-')));
 
   // ── verification ──
   console.log('\nverification');
