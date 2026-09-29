@@ -1301,17 +1301,160 @@ function playChime() {
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
-function wireSettings() {
-  $('btn-save-settings').addEventListener('click', onSaveSettings);
-  $('set-caesium-quality').addEventListener('input', () => { $('set-caesium-quality-val').textContent = $('set-caesium-quality').value; });
-  $('set-accent-color').addEventListener('input', () => { const v = $('set-accent-color').value; $('set-accent-preview').textContent = v; applyAccentColor(v); });
-  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.theme)));
-  document.querySelectorAll('#output-mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => setOutputMode(b.dataset.outmode)));
-  $('set-recursive').addEventListener('change', () => { settings.recursive = $('set-recursive').checked; });
+// ─── Settings: autosave ─────────────────────────────────────────────────────
+// Every control saves the moment it changes. There's no Save button to forget,
+// and what the dashboard shows always matches what the next run will use.
+const checkPath = (kind, otherKey) => async (value) =>
+  window.pixelforge.validatePath({ kind, value, other: otherKey ? settings[otherKey] : undefined });
 
-  const browse = (btnId, inputId, isFolder) => $(btnId).addEventListener('click', async () => {
-    const f = isFolder ? await window.pixelforge.selectFolder() : await window.pixelforge.selectFile([{ name: 'Executable', extensions: ['exe'] }]);
-    if (f) $(inputId).value = f;
+const SETTING_FIELDS = [
+  { id: 'set-upscayl-model',    key: 'upscaylModel',     type: 'select' },
+  { id: 'set-upscayl-scale',    key: 'upscaylScale',     type: 'select' },
+  { id: 'set-upscayl-format',   key: 'upscaylFormat',    type: 'select' },
+  { id: 'set-upscayl-gpu',      key: 'upscaylGpu',       type: 'select' },
+  { id: 'set-upscayl-tile',     key: 'upscaylTileSize',  type: 'text', validate: validateTile },
+  { id: 'set-upscayl-tta',      key: 'upscaylTta',       type: 'check' },
+  { id: 'set-caesium-quality',  key: 'caesiumQuality',   type: 'range' },
+  { id: 'set-caesium-format',   key: 'caesiumFormat',    type: 'select' },
+  { id: 'set-caesium-lossless', key: 'caesiumLossless',  type: 'check' },
+  { id: 'set-caesium-meta',     key: 'caesiumKeepMeta',  type: 'check' },
+  { id: 'set-upscayl-bin-path', key: 'upscaylBinPath',   type: 'path', validate: checkPath('exe') },
+  { id: 'set-caesium-bin-path', key: 'caesiumBinPath',   type: 'path', validate: checkPath('exe') },
+  { id: 'set-models-path',      key: 'modelsPath',       type: 'path', validate: checkPath('models') },
+  { id: 'set-upscaled-path',    key: 'upscaledPath',     type: 'path', validate: checkPath('dir', 'compressedPath') },
+  { id: 'set-compressed-path',  key: 'compressedPath',   type: 'path', validate: checkPath('dir', 'upscaledPath') },
+  { id: 'set-accent-color',     key: 'accentColor',      type: 'color' },
+  { id: 'set-recursive',        key: 'recursive',        type: 'check' },
+  { id: 'set-naming',           key: 'namingTemplate',   type: 'text', validate: validateNaming },
+  { id: 'set-notify',           key: 'notifyOnComplete', type: 'check' },
+  { id: 'set-sound',            key: 'soundOnComplete',  type: 'check' },
+  { id: 'set-autoupdate',       key: 'autoCheckUpdates', type: 'check' },
+  { id: 'set-restore-session',  key: 'restoreSession',   type: 'check' },
+  { id: 'set-confirm-exit',     key: 'confirmOnExit',    type: 'check' },
+];
+
+function validateTile(value) {
+  if (value === '') return { ok: true, value: '0' };
+  return /^\d+$/.test(value) && Number(value) <= 4096
+    ? { ok: true, value: String(Number(value)) }
+    : { ok: false, message: 'Enter a whole number from 0 to 4096 (0 means automatic).' };
+}
+
+function validateNaming(value) {
+  if (!value) return { ok: true, value: '{name}' };
+  if (!/\{name\}|\{index\}/.test(value)) {
+    return { ok: true, message: 'Without {name} or {index}, every image gets the same name plus a number — (2), (3)…' };
+  }
+  return { ok: true };
+}
+
+function setSaveStatus(state) {
+  const el = $('save-status');
+  el.dataset.state = state;
+  const icon = { saved: 'ic-check', saving: 'ic-refresh', error: 'ic-warn' }[state];
+  const text = { saved: 'All changes saved', saving: 'Saving…', error: "Not saved — check the highlighted field" }[state];
+  el.innerHTML = `<svg width="13" height="13" aria-hidden="true"><use href="#${icon}"/></svg><span></span>`;
+  el.querySelector('span').textContent = text;
+}
+
+// Shows an inline note under a setting: kind is 'error' or 'warn', or '' to clear.
+function fieldNote(input, message, kind) {
+  const row = input.closest('.set-row');
+  if (!row) return;
+  row.classList.toggle('has-error', kind === 'error');
+  const host = row.firstElementChild;
+  let note = host.querySelector('.field-note');
+  if (!message) { note?.remove(); return; }
+  if (!note) { note = document.createElement('div'); note.className = 'field-note'; host.appendChild(note); }
+  note.className = `field-note ${kind === 'error' ? 'is-error' : 'is-warn'}`;
+  note.textContent = message;
+}
+
+const pendingSaves = new Map();
+
+function queueCommit(field, delay) {
+  clearTimeout(pendingSaves.get(field.id));
+  pendingSaves.set(field.id, setTimeout(() => commitField(field), delay));
+}
+
+async function commitField(field) {
+  clearTimeout(pendingSaves.get(field.id));
+  const el = $(field.id);
+  let value = field.type === 'check' ? el.checked
+    : field.type === 'range' ? parseInt(el.value, 10)
+    : el.value.trim();
+
+  if (field.validate) {
+    const verdict = await field.validate(value);
+    fieldNote(el, verdict.message, verdict.ok ? (verdict.message ? 'warn' : '') : 'error');
+    if (!verdict.ok) { setSaveStatus('error'); return; }
+    if (verdict.value !== undefined) value = verdict.value;
+  }
+  if (settings[field.key] === value) { setSaveStatus('saved'); return; }
+  await saveSetting(field.key, value);
+}
+
+async function saveSetting(key, value) {
+  setSaveStatus('saving');
+  const res = await window.pixelforge.saveSettings({ [key]: value });
+  if (!res || (res.rejected || []).includes(key)) { setSaveStatus('error'); return false; }
+  settings = res.settings || { ...settings, [key]: value };
+  setSaveStatus('saved');
+  await afterSettingChange(key);
+  return true;
+}
+
+async function afterSettingChange(key) {
+  const field = SETTING_FIELDS.find(f => f.key === key);
+  // A cleared path snaps back to the default it now resolves to.
+  if (field && field.type === 'path') $(field.id).value = settings[key] || '';
+  if (key === 'upscaledPath' || key === 'compressedPath') {
+    appPaths = await window.pixelforge.getAppPaths();
+    updateOutputPathDisplays();
+  }
+  if (key === 'upscaylBinPath' || key === 'caesiumBinPath' || key === 'modelsPath') {
+    const r = await window.pixelforge.checkSetup();
+    const ok = r.upscaylOk && r.modelsOk && r.caesiumOk;
+    setBadge('pipeline-status-badge', ok ? 'ready' : 'error', ok ? 'Ready' : 'Setup Needed');
+    if (key === 'modelsPath') loadModels(settings.upscaylModel);
+  }
+  if (key === 'recursive' && queue.length && !pipelineRunning) scanAll();
+  if (key === 'restoreSession') persistQueue();
+  refreshIdleDock();
+}
+
+function wireSettings() {
+  for (const field of SETTING_FIELDS) {
+    const el = $(field.id);
+    if (field.type === 'check' || field.type === 'select') {
+      el.addEventListener('change', () => commitField(field));
+    } else if (field.type === 'range') {
+      el.addEventListener('input', () => { $('set-caesium-quality-val').textContent = el.value; });
+      el.addEventListener('change', () => commitField(field));
+    } else if (field.type === 'color') {
+      el.addEventListener('input', () => { $('set-accent-preview').textContent = el.value; applyAccentColor(el.value); queueCommit(field, 500); });
+      el.addEventListener('change', () => commitField(field));
+    } else {
+      el.addEventListener('input', () => queueCommit(field, 700));
+      el.addEventListener('change', () => commitField(field));
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.blur(); });
+    }
+  }
+
+  document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.addEventListener('click', () => {
+    applyTheme(b.dataset.theme);
+    saveSetting('theme', b.dataset.theme);
+  }));
+  document.querySelectorAll('#output-mode-seg .seg-btn').forEach(b => b.addEventListener('click', () => {
+    setOutputMode(b.dataset.outmode);
+    saveSetting('outputMode', outputMode);
+  }));
+
+  const browse = (btnId, fieldId, isFolder) => $(btnId).addEventListener('click', async () => {
+    const picked = isFolder ? await window.pixelforge.selectFolder() : await window.pixelforge.selectFile([{ name: 'Executable', extensions: ['exe'] }]);
+    if (!picked) return;
+    $(fieldId).value = picked;
+    commitField(SETTING_FIELDS.find(f => f.id === fieldId));
   });
   browse('btn-browse-upscayl-bin', 'set-upscayl-bin-path', false);
   browse('btn-browse-caesium-bin', 'set-caesium-bin-path', false);
@@ -1375,54 +1518,10 @@ function populateSettingsForm() {
   const accent = settings.accentColor || '#6366f1';
   $('set-accent-color').value = accent;
   $('set-accent-preview').textContent = accent;
+  document.querySelectorAll('.field-note').forEach(n => n.remove());
+  document.querySelectorAll('.set-row.has-error').forEach(r => r.classList.remove('has-error'));
   syncSelects();
   syncRanges();
-}
-
-async function onSaveSettings() {
-  const theme = document.querySelector('#theme-seg .seg-btn.active')?.dataset.theme || 'dark';
-  const recursiveChanged = !!settings.recursive !== $('set-recursive').checked;
-  const s = {
-    upscaylModel: $('set-upscayl-model').value,
-    upscaylScale: $('set-upscayl-scale').value,
-    upscaylFormat: $('set-upscayl-format').value,
-    upscaylGpu: $('set-upscayl-gpu').value,
-    upscaylTileSize: $('set-upscayl-tile').value,
-    upscaylTta: $('set-upscayl-tta').checked,
-    caesiumQuality: parseInt($('set-caesium-quality').value),
-    caesiumFormat: $('set-caesium-format').value,
-    caesiumLossless: $('set-caesium-lossless').checked,
-    caesiumKeepMeta: $('set-caesium-meta').checked,
-    upscaylBinPath: $('set-upscayl-bin-path').value,
-    caesiumBinPath: $('set-caesium-bin-path').value,
-    modelsPath: $('set-models-path').value,
-    upscaledPath: $('set-upscaled-path').value,
-    compressedPath: $('set-compressed-path').value,
-    accentColor: $('set-accent-color').value,
-    theme,
-    recursive: $('set-recursive').checked,
-    namingTemplate: $('set-naming').value || '{name}',
-    notifyOnComplete: $('set-notify').checked,
-    soundOnComplete: $('set-sound').checked,
-    autoCheckUpdates: $('set-autoupdate').checked,
-    outputMode,
-    restoreSession: $('set-restore-session').checked,
-    confirmOnExit: $('set-confirm-exit').checked,
-  };
-  await window.pixelforge.saveSettings(s);
-  settings = { ...settings, ...s };
-  persistQueue();
-  appPaths = await window.pixelforge.getAppPaths();
-  updateOutputPathDisplays();
-  if (recursiveChanged && queue.length) scanAll();
-
-  const btn = $('btn-save-settings');
-  const orig = btn.innerHTML;
-  btn.innerHTML = '<svg width="13" height="13"><use href="#ic-check"/></svg> Saved';
-  btn.disabled = true;
-  setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 1600);
-  refreshIdleDock();
-  toast('Settings saved', 'success');
 }
 
 // ─── Updates ────────────────────────────────────────────────────────────────

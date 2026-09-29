@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('pixelforge', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
+  validatePath: (args) => ipcRenderer.invoke('validate-path', args),
   getAppPaths: () => ipcRenderer.invoke('get-app-paths'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 

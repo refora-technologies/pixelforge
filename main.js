@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen, powerSaveBlocker } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const store = require('./src/main/store');
 const paths = require('./src/main/paths');
@@ -283,6 +284,44 @@ ipcMain.handle('open-external', (_, url) => {
 });
 
 // ── Settings ──
+
+// Checks a path the user typed or picked before it's saved, so a bad value is
+// caught in Settings rather than failing a run later. Blank means "default".
+ipcMain.handle('validate-path', async (_, { kind, value, other } = {}) => {
+  const v = String(value || '').trim();
+  if (!v) return { ok: true };
+  if (!path.isAbsolute(v)) return { ok: false, message: 'Use a full path, such as C:\\Users\\You\\Pictures.' };
+
+  let stat = null;
+  try { stat = await fs.promises.stat(v); } catch {}
+
+  if (kind === 'exe') {
+    if (!stat) return { ok: false, message: "That file doesn't exist." };
+    if (!stat.isFile() || !/\.exe$/i.test(v)) return { ok: false, message: 'Choose the .exe file itself, not a folder.' };
+    return { ok: true };
+  }
+  if (kind === 'models') {
+    if (!stat || !stat.isDirectory()) return { ok: false, message: "That folder doesn't exist." };
+    if (!paths.listModelsFromDir(v).length) return { ok: false, message: 'No AI models here — the folder needs .param and .bin files.' };
+    return { ok: true };
+  }
+  // Output folder
+  if (other && (paths.isSameOrInside(v, other) || paths.isSameOrInside(other, v))) {
+    return { ok: false, message: 'The upscaled and compressed folders must be separate.' };
+  }
+  if (stat && !stat.isDirectory()) return { ok: false, message: 'That path is a file, not a folder.' };
+  if (!stat) {
+    try {
+      if ((await fs.promises.stat(path.dirname(v))).isDirectory()) return { ok: true, message: 'This folder will be created on the next run.' };
+    } catch {}
+    return { ok: false, message: "This folder doesn't exist, and neither does the folder it would go in." };
+  }
+  try { await fs.promises.access(v, fs.constants.W_OK); } catch {
+    return { ok: false, message: "PixelForge can't write to this folder." };
+  }
+  return { ok: true };
+});
+
 ipcMain.handle('get-settings', () => settingsModule.getSettings());
 ipcMain.handle('save-settings', (_, s) => settingsModule.saveSettings(s));
 ipcMain.handle('reset-settings', () => settingsModule.resetSettings());
