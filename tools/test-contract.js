@@ -68,6 +68,17 @@ same('no duplicate ids', uniq(dupes));
 same('every id the renderer uses is in the page', minus(referenced, [...ids, ...created]));
 same('every icon used is defined', minus(iconUses, symbols));
 
+// An undefined custom property silently falls back to nothing (no border, no colour).
+const css = read('src/style.css');
+const boot = read('src/boot.js');
+const defined = [
+  ...all(css, /(--[\w-]+)\s*:/g),
+  ...all(renderer + boot, /setProperty\('(--[\w-]+)'/g),
+  ...all(html, /style="[^"]*?(--[\w-]+)\s*:/g),
+];
+const varUses = all(css + html + renderer, /var\((--[\w-]+)/g);
+same('every CSS variable used is defined', minus(varUses, defined));
+
 // ── Settings ──
 const mapped = all(settingsSrc, /\['[\w.]+',\s*'(\w+)'/g);
 const fieldKeys = all(renderer, /\{ id: '[\w-]+',\s*key: '(\w+)'/g);
