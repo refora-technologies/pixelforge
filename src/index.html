@@ -2,24 +2,15 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"/>
+  <!-- The UI is entirely local: no remote code, no network access from the page.
+       Images may come from any folder the user picks, hence file: for img-src.
+       Inline styles stay allowed for style attributes; scripts never inline. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PixelForge — Refora Technologies</title>
   <meta name="description" content="AI-powered image upscaling and compression automation by Refora Technologies."/>
   <link rel="stylesheet" href="style.css"/>
-  <script>
-    // Settings live in the main process, so mirror theme + accent locally and
-    // apply them before first paint to avoid a flash of the wrong theme.
-    try {
-      var t = localStorage.getItem('pf.theme');
-      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-      var a = localStorage.getItem('pf.accent');
-      if (a && /^#[0-9a-f]{6}$/i.test(a)) {
-        var s = document.documentElement.style;
-        s.setProperty('--accent', a);
-        s.setProperty('--accent-rgb', [1, 3, 5].map(function (i) { return parseInt(a.slice(i, i + 2), 16); }).join(', '));
-      }
-    } catch (e) {}
-  </script>
+  <script src="boot.js"></script>
 </head>
 
 <svg style="display:none">
