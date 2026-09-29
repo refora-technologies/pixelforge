@@ -637,7 +637,8 @@ body {
   padding: 8px 10px; text-align: left; transition: background 0.12s var(--ease), color 0.12s var(--ease);
 }
 .sel-opt-label { overflow: hidden; text-overflow: ellipsis; }
-.sel-opt:hover { background: var(--surface-2); color: var(--text-1); }
+/* Keyboard focus and pointer hover are one highlight (hover moves focus). */
+.sel-opt:hover, .sel-opt:focus { background: var(--surface-2); color: var(--text-1); outline: none; }
 .sel-opt.selected { color: var(--text-1); font-weight: 600; background: var(--accent-muted); }
 .sel-opt .sel-check { color: var(--accent-soft); flex-shrink: 0; opacity: 0; }
 .sel-opt.selected .sel-check { opacity: 1; }
@@ -796,7 +797,7 @@ kbd {
 /* ─── Focus ring ────────────────────────────────────────────────────────────── */
 .btn:focus-visible, .seg-btn:focus-visible, .nav-item:focus-visible, .sel-trigger:focus-visible,
 .ctrl-select:focus-visible, .ctrl-input:focus-visible, .btn-start:focus-visible,
-.toggle input:focus-visible + .toggle-track, .modal-icon-btn:focus-visible, .sel-opt:focus-visible {
+.toggle input:focus-visible + .toggle-track, .modal-icon-btn:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 

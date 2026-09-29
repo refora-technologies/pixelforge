@@ -19,6 +19,7 @@ let elapsedTimer = null;
 let scanToken = 0;
 let cmpPos = 50;
 let cmpFullscreen = false;
+let lastLoggedProgress = '';
 
 const $ = (id) => document.getElementById(id);
 const numFmt = (n) => Number(n).toLocaleString();
@@ -139,7 +140,11 @@ function enhanceSelect(sel) {
   const trigger = document.createElement('button');
   trigger.type = 'button';
   trigger.className = 'sel-trigger';
-  trigger.innerHTML = '<span class="sel-value"></span><svg class="sel-chev" width="14" height="14"><use href="#ic-chevron"/></svg>';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  const label = sel.closest('.set-row')?.querySelector('.set-label')?.textContent.trim();
+  if (label) trigger.setAttribute('aria-label', label);
+  trigger.innerHTML = '<span class="sel-value"></span><svg class="sel-chev" width="14" height="14" aria-hidden="true"><use href="#ic-chevron"/></svg>';
   wrap.appendChild(trigger);
 
   sel._pfSync = () => {
@@ -150,8 +155,15 @@ function enhanceSelect(sel) {
 
   trigger.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (openSelect && openSelect.sel === sel) closeSelectMenu();
+    if (openSelect && openSelect.sel === sel) closeSelectMenu(true);
     else openSelectMenu(sel, trigger);
+  });
+  // Same keys a native <select> answers to.
+  trigger.addEventListener('keydown', (e) => {
+    if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+      e.preventDefault();
+      openSelectMenu(sel, trigger);
+    }
   });
 }
 
@@ -160,23 +172,64 @@ function syncSelects() {
 }
 
 function openSelectMenu(sel, trigger) {
-  closeSelectMenu();
+  closeSelectMenu(false);
   const menu = document.createElement('div');
   menu.className = 'sel-menu';
-  Array.from(sel.options).forEach((opt, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'sel-opt' + (i === sel.selectedIndex ? ' selected' : '');
-    b.innerHTML = '<span class="sel-opt-label"></span><svg class="sel-check" width="13" height="13"><use href="#ic-check"/></svg>';
-    b.querySelector('.sel-opt-label').textContent = opt.textContent;
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      sel.selectedIndex = i;
-      sel._pfSync();
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      closeSelectMenu();
-    });
-    menu.appendChild(b);
+  menu.setAttribute('role', 'listbox');
+  if (trigger.getAttribute('aria-label')) menu.setAttribute('aria-label', trigger.getAttribute('aria-label'));
+
+  const choose = (i) => {
+    sel.selectedIndex = i;
+    sel._pfSync();
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    closeSelectMenu(true);
+  };
+
+  const options = Array.from(sel.options).map((opt, i) => {
+    const el = document.createElement('div');
+    const selected = i === sel.selectedIndex;
+    el.className = 'sel-opt' + (selected ? ' selected' : '');
+    el.setAttribute('role', 'option');
+    el.setAttribute('aria-selected', String(selected));
+    el.tabIndex = -1;
+    el.innerHTML = '<span class="sel-opt-label"></span><svg class="sel-check" width="13" height="13" aria-hidden="true"><use href="#ic-check"/></svg>';
+    el.querySelector('.sel-opt-label').textContent = opt.textContent;
+    el.addEventListener('click', (e) => { e.stopPropagation(); choose(i); });
+    // Pointer and keyboard share one highlight: hovering moves focus.
+    el.addEventListener('mousemove', () => { if (document.activeElement !== el) el.focus({ preventScroll: true }); });
+    menu.appendChild(el);
+    return el;
+  });
+
+  const focusAt = (i) => {
+    const target = options[Math.max(0, Math.min(options.length - 1, i))];
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: 'nearest' });
+  };
+
+  menu.addEventListener('keydown', (e) => {
+    const current = options.indexOf(document.activeElement);
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); focusAt(current + 1); break;
+      case 'ArrowUp':   e.preventDefault(); focusAt(current - 1); break;
+      case 'Home':      e.preventDefault(); focusAt(0); break;
+      case 'End':       e.preventDefault(); focusAt(options.length - 1); break;
+      case 'PageDown':  e.preventDefault(); focusAt(current + 5); break;
+      case 'PageUp':    e.preventDefault(); focusAt(current - 5); break;
+      case 'Enter':
+      case ' ':         e.preventDefault(); if (current >= 0) choose(current); break;
+      case 'Escape':    e.preventDefault(); e.stopPropagation(); closeSelectMenu(true); break;
+      // Hand focus back first so Tab continues from the trigger, not the menu.
+      case 'Tab':       closeSelectMenu(true); break;
+      default:
+        if (e.key.length === 1 && /\S/.test(e.key)) {
+          const key = e.key.toLowerCase();
+          const order = [...options.slice(current + 1), ...options.slice(0, current + 1)];
+          const hit = order.find(o => o.textContent.trim().toLowerCase().startsWith(key));
+          if (hit) focusAt(options.indexOf(hit));
+        }
+    }
   });
   document.body.appendChild(menu);
 
@@ -196,28 +249,28 @@ function openSelectMenu(sel, trigger) {
   };
   place();
   trigger.classList.add('open');
-  menu.querySelector('.sel-opt.selected')?.scrollIntoView({ block: 'nearest' });
+  trigger.setAttribute('aria-expanded', 'true');
+  focusAt(Math.max(0, sel.selectedIndex));
 
-  const onDoc = (e) => { if (!menu.contains(e.target) && !trigger.contains(e.target)) closeSelectMenu(); };
-  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeSelectMenu(); } };
+  const onDoc = (e) => { if (!menu.contains(e.target) && !trigger.contains(e.target)) closeSelectMenu(false); };
   document.addEventListener('mousedown', onDoc);
-  document.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', place);
   $('content').addEventListener('scroll', place, true);
 
-  openSelect = { sel, trigger, menu, onDoc, onKey, place };
+  openSelect = { sel, trigger, menu, onDoc, place };
 }
 
-function closeSelectMenu() {
+function closeSelectMenu(restoreFocus = false) {
   if (!openSelect) return;
-  const { trigger, menu, onDoc, onKey, place } = openSelect;
+  const { trigger, menu, onDoc, place } = openSelect;
+  openSelect = null;
   document.removeEventListener('mousedown', onDoc);
-  document.removeEventListener('keydown', onKey, true);
   window.removeEventListener('resize', place);
   $('content').removeEventListener('scroll', place, true);
   trigger.classList.remove('open');
+  trigger.setAttribute('aria-expanded', 'false');
   menu.remove();
-  openSelect = null;
+  if (restoreFocus) trigger.focus();
 }
 
 // ─── Toasts ─────────────────────────────────────────────────────────────────
@@ -480,8 +533,21 @@ async function startDownload(checkResult) {
     downloadUpscayl: !(checkResult.upscaylOk && checkResult.modelsOk),
     downloadCaesium: !checkResult.caesiumOk,
   };
-  if (!down.downloadCaesium) $('dl-caesium-wrap').classList.add('hidden');
-  if (!down.downloadUpscayl) $('dl-upscayl-wrap').classList.add('hidden');
+  // Reset every bar — this also runs again from "Try Again".
+  for (const id of ['caesium', 'upscayl']) {
+    $(`dl-${id}-bar`).style.width = '0%';
+    $(`dl-${id}-bar`).classList.remove('done');
+    $(`dl-${id}-pct`).textContent = '0%';
+    $(`dl-${id}-status`).textContent = 'Waiting…';
+    $(`dl-${id}-status`).className = 'dl-status';
+  }
+  $('dl-caesium-wrap').classList.toggle('hidden', !down.downloadCaesium);
+  $('dl-upscayl-wrap').classList.toggle('hidden', !down.downloadUpscayl);
+
+  // A failed download used to leave no button at all — the only way out was to
+  // quit the app. Retry re-checks first, so finished parts aren't fetched twice.
+  $('btn-dl-retry').onclick = async () => startDownload(await window.pixelforge.checkSetup());
+  $('btn-dl-back').onclick = () => showSetupOverlay(true);
 
   window.pixelforge.removeAllListeners('download-progress');
   window.pixelforge.onDownloadProgress((data) => {
@@ -534,10 +600,37 @@ function wireDashboard() {
     window.pixelforge.saveSettings({ pipelineMode: pipelineMode });
   }));
 
+  wireWindowDrop();
+}
+
+// Files can be dropped anywhere on the window, not just the drop zone. Without a
+// document-level handler, a drop elsewhere makes Chromium open the file in
+// place of the app.
+function wireWindowDrop() {
   const dz = $('dropzone');
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
-  dz.addEventListener('drop', onDrop);
+  let depth = 0;
+  const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes('Files');
+  const clear = () => { depth = 0; document.body.classList.remove('drag-active'); dz.classList.remove('dragover'); };
+
+  document.addEventListener('dragenter', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    if (depth++ === 0 && !pipelineRunning) { document.body.classList.add('drag-active'); dz.classList.add('dragover'); }
+  });
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = pipelineRunning || !isFileDrag(e) ? 'none' : 'copy';
+  });
+  document.addEventListener('dragleave', (e) => {
+    if (!isFileDrag(e)) return;
+    if (--depth <= 0) clear();
+  });
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    clear();
+    if (pipelineRunning) { toast('Wait for the current run to finish before adding more.', 'info'); return; }
+    if (isFileDrag(e)) onDrop(e);
+  });
 }
 
 function setMode(mode) {
@@ -680,7 +773,11 @@ async function scanAll() {
   $('scan-type-pills').innerHTML = Object.entries(types).map(([ext, n]) => `<span class="type-pill">${ext} (${n})</span>`).join('');
   $('scan-results-card').classList.remove('hidden');
   $('btn-start').disabled = pipelineRunning;
-  updateStats(all.length, 0, 0, null);
+  // Mid-run the counters belong to the run in progress; don't zero them.
+  if (!pipelineRunning) {
+    updateStats(all.length, 0, 0, null);
+    $('stat-saved').textContent = '—';
+  }
   $('stats-row').classList.remove('hidden');
 }
 
@@ -688,6 +785,7 @@ async function scanAll() {
 async function onStartPipeline() {
   if (!queue.length || !scannedImages.length || pipelineRunning) return;
   setRunningUI(true, false);
+  lastLoggedProgress = '';
   $('progress-card').classList.remove('hidden');
   $('results-card').classList.add('hidden');
   $('pipeline-log').innerHTML = '';
@@ -736,13 +834,16 @@ function onPipelineProgress(data) {
   const { stage, percent = 0, message = '', status, current } = data;
   if (data.elapsedMs !== undefined) updateTiming(data.elapsedMs, data.etaMs, data.throughput);
 
+  // `produced` counts files actually written; `current` also counts failures.
+  const made = data.produced ?? current;
   if (stage === 'upscaling') {
     setStage('upscaling', percent, message, status === 'done' ? 'done' : 'run');
-    if (current !== undefined) { updateStats(scannedImages.length, current, undefined, null); if (current > 0) log(message); }
+    if (made !== undefined) updateStats(scannedImages.length, made, undefined, null);
     if (status === 'done') log(message, 'log-ok');
+    else if (current > 0 && message !== lastLoggedProgress) { log(message); lastLoggedProgress = message; }
   } else if (stage === 'compressing') {
     setStage('compressing', percent, message, status === 'done' ? 'done' : 'run');
-    if (current !== undefined) updateStats(scannedImages.length, undefined, current, null);
+    if (made !== undefined) updateStats(scannedImages.length, undefined, made, null);
     if (status === 'done') log(message, 'log-ok');
   } else if (stage === 'complete') {
     if (pipelineMode !== 'compress') setStage('upscaling', 100, 'Complete', 'done');
@@ -769,12 +870,18 @@ function onPipelineDone(result) {
   finishRun('done');
   lastResults = result.results || [];
   lastRunDir = result.compressedDir || result.upscaledDir || '';
-  updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, result.savedPct);
+  updateStats(scannedImages.length, result.upscaledCount || 0, result.compressedCount || 0, null);
+  $('stat-saved').textContent = result.savedPct == null ? '—' : `${result.savedPct}%`;
   renderGallery(lastResults);
 
   const done = result.compressedCount || result.upscaledCount || 0;
-  const saved = result.savedPct ? ` · saved ${result.savedPct}%` : '';
+  const saved = result.savedPct > 0 ? ` · saved ${result.savedPct}%` : '';
   toast(`Finished ${done} image${done !== 1 ? 's' : ''} in ${fmtDuration(result.durationMs)}${saved}`, 'success', 5200);
+  if (result.failedCount) {
+    const n = result.failedCount;
+    toast(`${n} image${n !== 1 ? 's' : ''} couldn't be processed — the rest finished normally. Details are in the log.`, 'error', 8000);
+    for (const f of result.failures || []) log(`Failed: ${f.path.split(/[\\/]/).pop()} — ${f.reason}`, 'log-err');
+  }
   if (settings.soundOnComplete) playChime();
 }
 
@@ -845,10 +952,14 @@ function renderGallery(results) {
   $('results-card').classList.remove('hidden');
 
   for (const r of items.slice(0, GALLERY_LIMIT)) {
-    const thumb = r.compressed || r.upscaled || r.original;
-    const openTarget = r.compressed || r.upscaled;
+    // Compare against whatever this run made: the upscale when there is one,
+    // otherwise the compressed file (a Compress-only quality check).
+    const processed = r.upscaled || r.compressed;
+    const kind = r.upscaled ? 'Upscaled' : 'Compressed';
+    const thumb = r.compressed || r.upscaled;
+    const openTarget = thumb;
     const name = String(thumb).split(/[\\/]/).pop();
-    const canCompare = r.original && r.upscaled && r.original !== r.upscaled;
+    const canCompare = !!(r.original && processed && r.original !== processed);
 
     const tile = document.createElement('div');
     tile.className = 'gallery-tile';
@@ -865,8 +976,8 @@ function renderGallery(results) {
     tile.querySelector('[data-act="open"]').addEventListener('click', (e) => { e.stopPropagation(); window.pixelforge.openFile(openTarget); });
     tile.querySelector('[data-act="reveal"]').addEventListener('click', (e) => { e.stopPropagation(); window.pixelforge.showInFolder(openTarget); });
     const cmpBtn = tile.querySelector('[data-act="compare"]');
-    if (cmpBtn) cmpBtn.addEventListener('click', (e) => { e.stopPropagation(); openCompare(r.original, r.upscaled, name); });
-    tile.addEventListener('click', () => canCompare ? openCompare(r.original, r.upscaled, name) : window.pixelforge.openFile(openTarget));
+    if (cmpBtn) cmpBtn.addEventListener('click', (e) => { e.stopPropagation(); openCompare(r.original, processed, name, kind); });
+    tile.addEventListener('click', () => canCompare ? openCompare(r.original, processed, name, kind) : window.pixelforge.openFile(openTarget));
     grid.appendChild(tile);
   }
 
@@ -894,8 +1005,9 @@ function wireCompareModal() {
 
 // The base image fills the frame and shows through on the right; the clipped
 // overlay sits on top and reveals the original on the left-hand side.
-function openCompare(original, upscaled, name) {
+function openCompare(original, upscaled, name, kind = 'Upscaled') {
   $('compare-title').textContent = name ? `Before / After — ${name}` : 'Before / After';
+  $('cmp-tag-upscaled').textContent = kind;
   $('cmp-img-base').src = fileUrl(upscaled);
   $('cmp-img-overlay').src = fileUrl(original);
   $('compare-modal').classList.remove('hidden');

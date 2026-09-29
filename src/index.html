@@ -107,7 +107,13 @@
           <span class="dl-status" id="dl-upscayl-status">Waiting...</span>
         </div>
       </div>
-      <div id="dl-error-msg" class="hidden"><div class="alert alert-error"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-warn"/></svg></div><span id="dl-error-text"></span></div></div>
+      <div id="dl-error-msg" class="hidden">
+        <div class="alert alert-error"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-warn"/></svg></div><span id="dl-error-text"></span></div>
+        <div class="setup-actions mt-12">
+          <button class="btn btn-primary btn-lg" id="btn-dl-retry"><svg width="14" height="14"><use href="#ic-refresh"/></svg> Try Again</button>
+          <button class="btn btn-ghost" id="btn-dl-back">Back</button>
+        </div>
+      </div>
       <div id="dl-done-wrap" class="hidden mt-12">
         <div class="alert alert-success mb-12"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-check"/></svg></div>All dependencies installed successfully.</div>
         <button class="btn btn-primary btn-lg" id="btn-dl-enter" style="width:100%">Launch PixelForge <svg width="14" height="14"><use href="#ic-arrow-right"/></svg></button>
