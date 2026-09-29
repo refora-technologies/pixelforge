@@ -28,8 +28,8 @@ const numFmt = (n) => Number(n).toLocaleString();
 
 function byteFmt(b) {
   if (!b || b === 0) return '0 B';
-  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(b) / Math.log(k));
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(sizes.length - 1, Math.floor(Math.log(b) / Math.log(k)));
   return (b / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
 }
 
@@ -981,8 +981,19 @@ function renderIssues(result) {
 }
 
 // ─── Pipeline run ───────────────────────────────────────────────────────────
+let startingRun = false;
 async function onStartPipeline() {
-  if (!queue.length || !scannedImages.length || pipelineRunning) return;
+  if (!queue.length || !scannedImages.length || pipelineRunning || startingRun) return;
+  // A 4× upscale can need tens of gigabytes; ask before starting one that may not fit.
+  startingRun = true;
+  $('btn-start').disabled = true;
+  let space;
+  try {
+    space = await window.pixelforge.checkSpace({ queue, settings: { ...settings, pipelineMode } });
+  } catch { space = { proceed: true }; }
+  finally { startingRun = false; }
+  if (!space.proceed) { $('btn-start').disabled = !scannedImages.length; return; }
+
   setRunningUI(true, false);
   lastLoggedProgress = '';
   lastProgress = null;
@@ -1003,6 +1014,7 @@ async function onStartPipeline() {
   setDock('running', { title: 'Starting…', meta: '', sub: runSummary(), progress: 0 });
   startElapsed();
   log(`Pipeline started — ${scannedImages.length} images, mode: ${pipelineMode}`, 'log-hl');
+  if (space.needed) log(`Space needed: up to about ${byteFmt(space.needed)}`);
 
   try {
     const s = await window.pixelforge.getSettings();

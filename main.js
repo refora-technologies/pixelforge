@@ -13,6 +13,7 @@ const updater = require('./src/main/updater');
 const pipeline = require('./src/main/pipeline');
 const { collectInputs } = require('./src/main/scan');
 const guard = require('./src/main/guard');
+const space = require('./src/main/space');
 const { sha256File } = require('./src/main/download');
 const { spawn } = require('child_process');
 
@@ -268,6 +269,30 @@ ipcMain.handle('start-pipeline', async (_, { queue, inputFolder, settings }) => 
   } finally {
     powerSaveBlocker.stop(blocker);
   }
+});
+// Asked before a run starts. Only a likely shortfall interrupts; an estimate
+// that can't be made (unreadable drive, odd files) never blocks a run.
+const GB = 1024 ** 3;
+const fmtSize = (b) => (b >= 1024 * GB ? `${(b / 1024 / GB).toFixed(1)} TB`
+  : b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1024 ** 2))} MB`);
+ipcMain.handle('check-space', async (_, { queue, settings } = {}) => {
+  let plan;
+  try { plan = await space.planSpace(Array.isArray(queue) ? queue : [], settings || {}); }
+  catch (err) { return { proceed: true, error: err.message }; }
+  if (!plan.short.length) return { proceed: true, needed: plan.needed };
+  const lines = plan.short.map(d => `${d.root.replace(/\\$/, '')} needs about ${fmtSize(d.needed)} and has ${fmtSize(d.free)} free.`);
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['Cancel', 'Start anyway'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'This run may not fit',
+    message: 'There may not be enough free space for this run.',
+    detail: `${lines.join('\n')}\n\nFree up space or choose another output folder in Settings. ` +
+      'The estimate errs on the high side, so it may still fit.',
+  });
+  return { proceed: response === 1, needed: plan.needed, short: plan.short };
 });
 ipcMain.handle('cancel-pipeline', () => pipeline.cancel());
 ipcMain.handle('pause-pipeline', () => { pipeline.pause(); if (pipeline.isRunning()) setTaskbarProgress(lastFraction, 'paused'); });

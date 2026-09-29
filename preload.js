@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('pixelforge', {
   // File.path was removed in Electron 32; this is its replacement for drops.
   getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   scanInputs: (inputs, recursive) => ipcRenderer.invoke('scan-inputs', inputs, recursive),
+  checkSpace: (args) => ipcRenderer.invoke('check-space', args),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
