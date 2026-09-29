@@ -53,6 +53,8 @@
   <symbol id="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
   <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
   <symbol id="ic-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="ic-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></symbol>
+  <symbol id="ic-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></symbol>
   <symbol id="ic-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
   <symbol id="ic-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
 </svg>
@@ -451,7 +453,10 @@
             <tr><td><kbd>Ctrl</kbd> + <kbd>I</kbd></td><td>Add individual images</td><td></td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>Enter</kbd></td><td>Start the pipeline</td><td></td></tr>
             <tr><td><kbd>Ctrl</kbd> + <kbd>1</kbd> … <kbd>3</kbd></td><td>Switch between pages</td><td></td></tr>
-            <tr><td><kbd>Esc</kbd></td><td>Close the compare view</td><td></td></tr>
+            <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Compare view: previous / next result</td><td></td></tr>
+            <tr><td><kbd>Shift</kbd> + <kbd>←</kbd> <kbd>→</kbd></td><td>Compare view: move the divider</td><td></td></tr>
+            <tr><td><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd> <kbd>1</kbd></td><td>Compare view: zoom in, out, fit, actual pixels</td><td></td></tr>
+            <tr><td><kbd>F</kbd> · <kbd>Esc</kbd></td><td>Compare view: fullscreen · close</td><td></td></tr>
           </table>
         </div>
 
@@ -474,23 +479,33 @@
 <div id="compare-modal" class="modal hidden">
   <div class="modal-card" id="compare-card">
     <div class="modal-head">
-      <div class="modal-title" id="compare-title">Before / After</div>
+      <div class="cmp-heading">
+        <div class="modal-title" id="compare-title">Before / After</div>
+        <div class="cmp-counter" id="cmp-counter"></div>
+      </div>
+      <div class="cmp-toolbar" role="toolbar" aria-label="Zoom">
+        <button class="modal-icon-btn" id="cmp-zoom-out" title="Zoom out (−)" aria-label="Zoom out"><svg width="14" height="14"><use href="#ic-minus"/></svg></button>
+        <button class="cmp-zoom-label" id="cmp-zoom-label" title="Fit to window (0)">Fit</button>
+        <button class="modal-icon-btn" id="cmp-zoom-in" title="Zoom in (+)" aria-label="Zoom in"><svg width="14" height="14"><use href="#ic-plus"/></svg></button>
+        <button class="cmp-actual" id="cmp-actual" title="Actual pixels (1)">1:1</button>
+      </div>
       <div class="modal-head-actions">
-        <button class="modal-icon-btn" id="compare-expand" title="Fullscreen (F)"><svg width="15" height="15"><use id="compare-expand-icon" href="#ic-expand"/></svg></button>
-        <button class="modal-icon-btn" id="compare-close" title="Close (Esc)"><svg width="15" height="15"><use href="#ic-x"/></svg></button>
+        <button class="modal-icon-btn" id="compare-expand" title="Fullscreen (F)" aria-label="Fullscreen"><svg width="15" height="15"><use id="compare-expand-icon" href="#ic-expand"/></svg></button>
+        <button class="modal-icon-btn" id="compare-close" title="Close (Esc)" aria-label="Close"><svg width="15" height="15"><use href="#ic-x"/></svg></button>
       </div>
     </div>
     <div class="cmp" id="cmp">
+      <img id="cmp-img-base" src="" alt="Processed result"/>
+      <div class="cmp-clip" id="cmp-clip"><img id="cmp-img-overlay" src="" alt="Original image"/></div>
       <span class="cmp-tag before" id="cmp-tag-original">Original</span>
       <span class="cmp-tag after" id="cmp-tag-upscaled">Upscaled</span>
-      <img id="cmp-img-base" src="" alt=""/>
-      <div class="cmp-clip" id="cmp-clip"><img id="cmp-img-overlay" src="" alt=""/></div>
       <div class="cmp-divider" id="cmp-divider"></div>
       <div class="cmp-handle" id="cmp-handle"><svg width="16" height="16"><use href="#ic-compare"/></svg></div>
-      <input type="range" class="cmp-range" id="cmp-range" min="0" max="100" value="50" step="0.1" aria-label="Comparison position"/>
+      <button class="cmp-nav prev" id="cmp-prev" title="Previous (←)" aria-label="Previous image"><svg width="18" height="18"><use href="#ic-chevron-left"/></svg></button>
+      <button class="cmp-nav next" id="cmp-next" title="Next (→)" aria-label="Next image"><svg width="18" height="18"><use href="#ic-chevron-right"/></svg></button>
     </div>
     <div class="cmp-foot">
-      <span class="cmp-hint">Drag to compare · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> close</span>
+      <span class="cmp-hint">Drag the divider · Scroll to zoom, drag to pan · <kbd>←</kbd><kbd>→</kbd> previous / next · <kbd>1</kbd> actual pixels · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> close</span>
     </div>
   </div>
 </div>

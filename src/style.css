@@ -611,37 +611,76 @@ body.is-running .queue-list { opacity: 0.72; }
 .modal-icon-btn:active { transform: scale(0.94); }
 
 /* ─── Compare viewer ────────────────────────────────────────────────────────── */
+/* A fixed-size frame; the images are sized and positioned inside it by JS so
+   both share one transform and stay aligned while zooming and panning. */
 .cmp {
-  position: relative; width: 100%; flex: 1; min-height: 0;
+  position: relative; width: 100%; height: 62vh; flex-shrink: 0;
   border-radius: var(--radius-md); overflow: hidden; background: var(--inset);
   border: 1px solid var(--border-1);
-  display: flex; align-items: center; justify-content: center;
+  cursor: ew-resize; touch-action: none; user-select: none;
 }
-.cmp img { display: block; width: 100%; height: 100%; max-height: 64vh; object-fit: contain; }
-.cmp-clip { position: absolute; inset: 0; overflow: hidden; }
-.cmp-clip img { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; object-fit: contain; }
+.modal-card.is-fullscreen .cmp { height: auto; flex: 1; min-height: 0; }
+.cmp.is-zoomed { cursor: grab; }
+.cmp.is-zoomed.near-divider { cursor: ew-resize; }
+.cmp.is-panning, .cmp.is-panning.near-divider { cursor: grabbing; }
+.cmp img {
+  position: absolute; left: 0; top: 0; display: block; max-width: none; max-height: none;
+  transform-origin: 0 0; object-fit: fill; will-change: transform; pointer-events: none;
+}
+.cmp-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .cmp-divider { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 0 12px rgba(0,0,0,0.4); pointer-events: none; transform: translateX(-1px); }
 .cmp-handle {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
   width: 34px; height: 34px; border-radius: 50%; background: #fff;
   box-shadow: 0 2px 12px rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center;
-  color: var(--accent); pointer-events: none; transition: transform 0.18s var(--spring);
+  color: #4f46e5; pointer-events: none; transition: transform 0.18s var(--spring);
 }
-.cmp:hover .cmp-handle { transform: translate(-50%,-50%) scale(1.08); }
-.cmp-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; -webkit-appearance: none; appearance: none; background: transparent; }
-.cmp-range::-webkit-slider-thumb { -webkit-appearance: none; width: 44px; height: 100%; cursor: ew-resize; }
+.cmp.near-divider .cmp-handle, .cmp:not(.is-zoomed):hover .cmp-handle { transform: translate(-50%,-50%) scale(1.08); }
 .cmp-tag {
   position: absolute; top: 11px; z-index: 2; padding: 4px 10px; border-radius: 7px;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #fff;
   background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.14);
-  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease);
+  transition: opacity 0.22s var(--ease), transform 0.22s var(--ease); pointer-events: none;
 }
 .cmp-tag.before { left: 11px; }
 .cmp-tag.after { right: 11px; }
 /* A label only makes sense while its half is actually on screen */
-.cmp-tag.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.cmp-tag.is-hidden { opacity: 0; transform: translateY(-6px); }
+
+/* Previous / next, revealed on hover */
+.cmp-nav {
+  position: absolute; top: 50%; z-index: 3; width: 38px; height: 38px; margin-top: -19px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  color: #fff; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.18s var(--ease), background 0.16s var(--ease), transform 0.18s var(--spring);
+}
+.cmp-nav.prev { left: 12px; }
+.cmp-nav.next { right: 12px; }
+.cmp:hover .cmp-nav:not(:disabled), .cmp-nav:focus-visible { opacity: 1; }
+.cmp-nav:hover { background: rgba(0,0,0,0.75); transform: scale(1.06); }
+.cmp-nav:disabled, .cmp.single .cmp-nav { display: none; }
+.cmp-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Title, counter and zoom controls */
+.cmp-heading { min-width: 0; flex: 1; }
+.cmp-counter { font-size: 11px; font-weight: 600; color: var(--text-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
+.cmp-counter:empty { display: none; }
+.cmp-toolbar { display: flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 3px; border-radius: 10px; background: var(--inset); border: 1px solid var(--border-1); }
+.cmp-toolbar .modal-icon-btn { width: 28px; height: 28px; border-radius: 7px; border: none; background: transparent; }
+.cmp-toolbar .modal-icon-btn:hover { background: var(--surface-2); transform: none; }
+.cmp-toolbar .modal-icon-btn:disabled { opacity: 0.35; pointer-events: none; }
+.cmp-zoom-label, .cmp-actual {
+  height: 28px; padding: 0 9px; border: none; border-radius: 7px; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums;
+  transition: background var(--transition);
+}
+.cmp-zoom-label { min-width: 54px; }
+.cmp-zoom-label:hover, .cmp-actual:hover { background: var(--surface-2); }
+.cmp-actual { color: var(--text-2); border-left: 1px solid var(--border-1); border-radius: 0 7px 7px 0; }
+
 .cmp-foot { display: flex; align-items: center; justify-content: center; padding-top: 13px; flex-shrink: 0; }
-.cmp-hint { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+.cmp-hint { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.cmp-hint kbd + kbd { margin-left: -3px; }
 
 /* Fullscreen: the card fills the window and the image takes all remaining room */
 .modal-card.is-fullscreen {
@@ -650,7 +689,6 @@ body.is-running .queue-list { opacity: 0.72; }
   animation: fullscreen-in 0.26s var(--ease);
 }
 @keyframes fullscreen-in { from { opacity: 0.55; transform: scale(0.985); } to { opacity: 1; transform: none; } }
-.modal-card.is-fullscreen .cmp img { max-height: none; }
 
 /* ─── Output folder tiles ───────────────────────────────────────────────────── */
 .output-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }

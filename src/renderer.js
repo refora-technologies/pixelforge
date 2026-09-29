@@ -382,6 +382,16 @@ function wireShortcuts() {
       // Escape steps out of fullscreen before it closes the viewer.
       if (e.key === 'Escape') { cmpFullscreen ? toggleCompareFullscreen(false) : closeCompare(); return; }
       if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleCompareFullscreen(); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const dir = e.key === 'ArrowLeft' ? -1 : 1;
+        if (e.shiftKey) setCmpPos(cmpPos + dir * 5); else stepCompare(dir);
+        return;
+      }
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomCompareBy(1.5); return; }
+      if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomCompareBy(1 / 1.5); return; }
+      if (e.key === '0') { e.preventDefault(); compareFit(); return; }
+      if (e.key === '1') { e.preventDefault(); compareActual(); return; }
     }
     if (!e.ctrlKey || e.altKey || e.shiftKey) return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
@@ -1193,6 +1203,16 @@ function renderGallery(results) {
   if (!items.length) { $('results-card').classList.add('hidden'); return; }
   $('results-card').classList.remove('hidden');
 
+  // The viewer steps through every comparable result, not just the tiles shown.
+  cmpView.list = items
+    .map(r => ({
+      original: r.original,
+      processed: r.upscaled || r.compressed,
+      kind: r.upscaled ? 'Upscaled' : 'Compressed',
+      name: String(r.compressed || r.upscaled).split(/[\\/]/).pop(),
+    }))
+    .filter(c => c.original && c.processed && c.original !== c.processed);
+
   for (const r of items.slice(0, GALLERY_LIMIT)) {
     // Compare against whatever this run made: the upscale when there is one,
     // otherwise the compressed file (a Compress-only quality check).
@@ -1231,30 +1251,166 @@ function renderGallery(results) {
   }
 }
 
+// ─── Compare viewer ─────────────────────────────────────────────────────────
+// Both images share one transform, so they stay pixel-aligned at any zoom. The
+// divider and labels live in frame space, so the split still works zoomed in.
+// Zoom is relative to "fit": 1 = whole image visible, 1/fit = actual pixels.
+const cmpView = { list: [], index: 0, zoom: 1, tx: 0, ty: 0, natW: 0, natH: 0 };
+const MAX_PIXEL_SCALE = 8; // 800% of the result's real pixels
+
+function cmpFit() {
+  const frame = $('cmp');
+  if (!cmpView.natW || !frame.clientWidth) return 1;
+  return Math.min(frame.clientWidth / cmpView.natW, frame.clientHeight / cmpView.natH);
+}
+function cmpZoomBounds() {
+  const fit = cmpFit();
+  return { min: Math.min(1, 1 / fit), max: Math.max(1, MAX_PIXEL_SCALE / fit) };
+}
+
+function layoutCompare() {
+  const frame = $('cmp');
+  const fw = frame.clientWidth, fh = frame.clientHeight;
+  if (!cmpView.natW || !fw) return;
+  const scale = cmpFit() * cmpView.zoom;
+  const w = cmpView.natW * scale, h = cmpView.natH * scale;
+  // Smaller than the frame: centre it. Larger: pan, but never past an edge.
+  cmpView.tx = w <= fw ? (fw - w) / 2 : Math.min(0, Math.max(fw - w, cmpView.tx));
+  cmpView.ty = h <= fh ? (fh - h) / 2 : Math.min(0, Math.max(fh - h, cmpView.ty));
+  for (const img of [$('cmp-img-base'), $('cmp-img-overlay')]) {
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+    img.style.transform = `translate(${cmpView.tx}px, ${cmpView.ty}px)`;
+  }
+  const zoomed = cmpView.zoom > 1.001;
+  frame.classList.toggle('is-zoomed', zoomed);
+  $('cmp-zoom-label').textContent = zoomed ? `${Math.round(scale * 100)}%` : 'Fit';
+  const { min, max } = cmpZoomBounds();
+  $('cmp-zoom-out').disabled = cmpView.zoom <= min + 0.001;
+  $('cmp-zoom-in').disabled = cmpView.zoom >= max - 0.001;
+}
+
+// Zooms keeping the image point under (px, py) — frame coordinates — still.
+function zoomCompareTo(zoom, px, py) {
+  const frame = $('cmp');
+  const { min, max } = cmpZoomBounds();
+  const next = Math.min(max, Math.max(min, zoom));
+  const cx = px ?? frame.clientWidth / 2, cy = py ?? frame.clientHeight / 2;
+  const ratio = next / cmpView.zoom;
+  cmpView.tx = cx - (cx - cmpView.tx) * ratio;
+  cmpView.ty = cy - (cy - cmpView.ty) * ratio;
+  cmpView.zoom = next;
+  layoutCompare();
+}
+const zoomCompareBy = (factor) => zoomCompareTo(cmpView.zoom * factor);
+const compareFit = () => zoomCompareTo(1);
+const compareActual = () => zoomCompareTo(1 / cmpFit());
+
 function wireCompareModal() {
+  const frame = $('cmp');
   $('compare-close').addEventListener('click', closeCompare);
   $('compare-expand').addEventListener('click', () => toggleCompareFullscreen());
   $('compare-modal').addEventListener('click', (e) => { if (e.target.id === 'compare-modal') closeCompare(); });
-  $('cmp-range').addEventListener('input', (e) => setCmpPos(parseFloat(e.target.value)));
-  $('cmp').addEventListener('dblclick', () => toggleCompareFullscreen());
-  // Images arrive async and the frame resizes with the window — both change
-  // where the labels sit relative to the divider.
-  $('cmp-img-base').addEventListener('load', () => setCmpPos(cmpPos));
+  $('cmp-zoom-in').addEventListener('click', () => zoomCompareBy(1.5));
+  $('cmp-zoom-out').addEventListener('click', () => zoomCompareBy(1 / 1.5));
+  $('cmp-zoom-label').addEventListener('click', compareFit);
+  $('cmp-actual').addEventListener('click', compareActual);
+  $('cmp-prev').addEventListener('click', (e) => { e.stopPropagation(); stepCompare(-1); });
+  $('cmp-next').addEventListener('click', (e) => { e.stopPropagation(); stepCompare(1); });
+  frame.addEventListener('dblclick', (e) => { if (!e.target.closest('.cmp-nav')) toggleCompareFullscreen(); });
+
+  frame.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = frame.getBoundingClientRect();
+    zoomCompareTo(cmpView.zoom * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+
+  // Near the divider: move it. Elsewhere: pan when zoomed, or jump the divider
+  // to the pointer when not.
+  let drag = null;
+  const nearDivider = (x) => Math.abs(x - frame.clientWidth * cmpPos / 100) <= 18;
+  frame.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('.cmp-nav')) return;
+    const x = e.clientX - frame.getBoundingClientRect().left;
+    if (cmpView.zoom > 1.001 && !nearDivider(x)) {
+      drag = { mode: 'pan', x0: e.clientX, y0: e.clientY, tx0: cmpView.tx, ty0: cmpView.ty };
+      frame.classList.add('is-panning');
+    } else {
+      drag = { mode: 'divider' };
+      setCmpPos(x / frame.clientWidth * 100);
+    }
+    frame.setPointerCapture(e.pointerId);
+  });
+  frame.addEventListener('pointermove', (e) => {
+    const x = e.clientX - frame.getBoundingClientRect().left;
+    if (!drag) {
+      frame.classList.toggle('near-divider', nearDivider(x));
+      return;
+    }
+    if (drag.mode === 'pan') {
+      cmpView.tx = drag.tx0 + (e.clientX - drag.x0);
+      cmpView.ty = drag.ty0 + (e.clientY - drag.y0);
+      layoutCompare();
+    } else {
+      setCmpPos(x / frame.clientWidth * 100);
+    }
+  });
+  const endDrag = () => { drag = null; frame.classList.remove('is-panning'); };
+  frame.addEventListener('pointerup', endDrag);
+  frame.addEventListener('pointercancel', endDrag);
+
+  // Natural size is only known once the result loads; the window can resize too.
+  $('cmp-img-base').addEventListener('load', () => {
+    const img = $('cmp-img-base');
+    cmpView.natW = img.naturalWidth;
+    cmpView.natH = img.naturalHeight;
+    cmpView.zoom = 1;
+    layoutCompare();
+    setCmpPos(cmpPos);
+  });
   window.addEventListener('resize', () => {
-    if (!$('compare-modal').classList.contains('hidden')) setCmpPos(cmpPos);
+    if ($('compare-modal').classList.contains('hidden')) return;
+    layoutCompare();
+    setCmpPos(cmpPos);
   });
 }
 
-// The base image fills the frame and shows through on the right; the clipped
-// overlay sits on top and reveals the original on the left-hand side.
-function openCompare(original, upscaled, name, kind = 'Upscaled') {
-  $('compare-title').textContent = name ? `Before / After — ${name}` : 'Before / After';
-  $('cmp-tag-upscaled').textContent = kind;
-  $('cmp-img-base').src = fileUrl(upscaled);
-  $('cmp-img-overlay').src = fileUrl(original);
+function showCompareItem() {
+  const item = cmpView.list[cmpView.index];
+  if (!item) return;
+  const n = cmpView.list.length;
+  $('compare-title').textContent = item.name ? `Before / After — ${item.name}` : 'Before / After';
+  $('cmp-counter').textContent = n > 1 ? `${numFmt(cmpView.index + 1)} of ${numFmt(n)}` : '';
+  $('cmp-tag-upscaled').textContent = item.kind;
+  $('cmp-prev').disabled = cmpView.index === 0;
+  $('cmp-next').disabled = cmpView.index >= n - 1;
+  $('cmp').classList.toggle('single', n <= 1);
+  cmpView.natW = 0;
+  cmpView.natH = 0;
+  $('cmp-img-base').src = fileUrl(item.processed);
+  $('cmp-img-overlay').src = fileUrl(item.original);
+}
+
+function openCompareAt(index) {
+  cmpView.index = Math.max(0, Math.min(cmpView.list.length - 1, index));
   $('compare-modal').classList.remove('hidden');
+  showCompareItem();
   setCmpPos(50);
   requestAnimationFrame(() => setCmpPos(50));
+}
+
+function stepCompare(delta) {
+  const next = cmpView.index + delta;
+  if (next < 0 || next >= cmpView.list.length) return;
+  cmpView.index = next;
+  showCompareItem(); // keeps the divider where the user left it
+}
+
+// Kept for callers that have a pair rather than a list position.
+function openCompare(original, processed, name, kind = 'Upscaled') {
+  let index = cmpView.list.findIndex(c => c.original === original && c.processed === processed);
+  if (index < 0) { cmpView.list = [{ original, processed, name, kind }]; index = 0; }
+  openCompareAt(index);
 }
 
 function closeCompare() {
@@ -1269,7 +1425,7 @@ function toggleCompareFullscreen(force) {
   $('compare-card').classList.toggle('is-fullscreen', cmpFullscreen);
   $('compare-expand-icon').setAttribute('href', cmpFullscreen ? '#ic-collapse' : '#ic-expand');
   $('compare-expand').title = cmpFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
-  requestAnimationFrame(() => setCmpPos(cmpPos));
+  requestAnimationFrame(() => { layoutCompare(); setCmpPos(cmpPos); });
 }
 
 function setCmpPos(p) {
@@ -1278,7 +1434,6 @@ function setCmpPos(p) {
   $('cmp-clip').style.clipPath = `inset(0 ${100 - p}% 0 0)`;
   $('cmp-divider').style.left = p + '%';
   $('cmp-handle').style.left = p + '%';
-  $('cmp-range').value = p;
   updateCmpTags(p);
 }
 
