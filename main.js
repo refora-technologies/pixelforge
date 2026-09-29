@@ -12,6 +12,7 @@ const gpu = require('./src/main/gpu');
 const updater = require('./src/main/updater');
 const pipeline = require('./src/main/pipeline');
 const { collectInputs } = require('./src/main/scan');
+const guard = require('./src/main/guard');
 
 // One window, one pipeline. A second instance would share the same settings
 // and output folders, and two Replace-mode runs would clean up each other's work.
@@ -274,12 +275,28 @@ function notifyDone(result, settings) {
 }
 
 // ── Output / shell ──
-ipcMain.handle('open-folder', (_, folderPath) => shell.openPath(folderPath));
-ipcMain.handle('open-file', (_, filePath) => shell.openPath(filePath));
-ipcMain.handle('show-in-folder', (_, filePath) => shell.showItemInFolder(filePath));
+// Everything the window can ask the OS to open passes through src/main/guard.js:
+// folders only as folders, files only if they're images or logs, and links only
+// to PixelForge's own site and repository.
+const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+
+ipcMain.handle('open-folder', (_, folderPath) => {
+  if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath) || !isDir(folderPath)) return 'Not a folder.';
+  return shell.openPath(folderPath);
+});
+ipcMain.handle('open-file', (_, filePath) => {
+  if (!guard.isOpenableFile(filePath) || !isFile(filePath)) return 'That file can’t be opened from PixelForge.';
+  return shell.openPath(filePath);
+});
+ipcMain.handle('show-in-folder', (_, filePath) => {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) return false;
+  shell.showItemInFolder(filePath);
+  return true;
+});
 ipcMain.handle('open-logs', () => { paths.ensureDir(paths.getLogsDir()); return shell.openPath(paths.getLogsDir()); });
 ipcMain.handle('open-external', (_, url) => {
-  if (!/^https:\/\//i.test(String(url))) return false;
+  if (!guard.isAllowedExternalUrl(url)) return false;
   shell.openExternal(url);
   return true;
 });
