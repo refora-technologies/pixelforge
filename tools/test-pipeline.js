@@ -12,7 +12,6 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const zlib = require('zlib');
 const { execFileSync } = require('child_process');
 const { app } = require('electron');
 
@@ -32,42 +31,9 @@ store.set('paths.caesiumBin', CAESIUM);
 store.set('paths.upscaylBin', UPSCAYL);
 store.set('paths.models', path.join(ROOT, 'src', 'models'));
 
-// ── Tiny PNG encoder, so tests don't depend on image fixtures ──
-const CRC = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-function pngChunk(type, data) {
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-function makePng(size, seed) {
-  const row = size * 3 + 1;
-  const raw = Buffer.alloc(row * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const o = y * row + 1 + x * 3;
-      raw[o] = (x * 5 + seed * 40) & 255;
-      raw[o + 1] = (y * 5 + seed * 70) & 255;
-      raw[o + 2] = ((x ^ y) * 3 + seed * 20) & 255;
-    }
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; ihdr[9] = 2; // 8-bit RGB
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    pngChunk('IHDR', ihdr), pngChunk('IDAT', zlib.deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0)),
-  ]);
-}
+// Tiny generated images, so tests don't depend on fixture files.
+const { makePng: makeRect } = require('./lib/png');
+const makePng = (size, seed) => makeRect(size, size, seed);
 
 // ── Harness ──
 let passed = 0, failed = 0, skipped = 0;

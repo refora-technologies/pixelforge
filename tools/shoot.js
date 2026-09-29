@@ -165,6 +165,9 @@ app.whenReady().then(async () => {
     await js(`setCmpPos(46); toggleCompareFullscreen(true); null`);
     await shot('compare-fullscreen');
 
+    await js(`compareActual(); null`);
+    await shot('compare-actual-pixels');
+
     await js(`closeCompare(); null`);
 
     // 10-11 — settings, including an open dropdown
