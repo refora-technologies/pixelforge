@@ -16,6 +16,16 @@ app.setPath('documents', path.join(PROFILE, 'documents'));
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 fs.writeFileSync(path.join(PROFILE, 'config.json'), JSON.stringify({ app: { setupDone: true, autoCheckUpdates: false } }));
 
+// Chromium reports CSP violations to the console; listen from the moment the
+// window exists so nothing that happens during page load is missed.
+const cspViolations = [];
+app.on('browser-window-created', (_, w) => {
+  w.webContents.on('console-message', (event) => {
+    const text = String(event.message || '');
+    if (/Content Security Policy|Refused to (load|execute|apply)/i.test(text)) cspViolations.push(text.slice(0, 160));
+  });
+});
+
 require('../main.js');
 const store = require('../src/main/store');
 
@@ -97,6 +107,14 @@ app.whenReady().then(async () => {
     await sleep(700);
     const naming = await noteFor('set-naming');
     check('risky naming template warns but still saves', naming && /is-warn/.test(naming.cls) && store.get('app.namingTemplate') === '{model}');
+
+    console.log('\nplatform');
+    const csp = await js(`document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || ''`);
+    check('page ships a Content-Security-Policy', /script-src 'self'/.test(csp) && /default-src 'none'/.test(csp), csp);
+    check('no inline scripts remain', await js(`[...document.scripts].every(s => s.src)`));
+    check('pre-paint boot script loaded under the policy', await js(`[...document.scripts].some(s => s.src.endsWith('boot.js')) && localStorage.getItem('pf.theme') === 'light'`));
+    check('drop paths use webUtils (File.path is gone)', await js(`typeof window.pixelforge.getPathForFile === 'function' && window.pixelforge.getPathForFile(new File(['x'], 'a.png')) === ''`));
+    check('no CSP violations while the app ran', cspViolations.length === 0, JSON.stringify(cspViolations.slice(0, 3)));
 
     console.log('\nkeyboard dropdown');
     const before = store.get('upscayl.scale') || '4';
