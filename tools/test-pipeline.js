@@ -83,6 +83,15 @@ const img = (d, name, seed = 1, size = 40) => { const p = path.join(d, name); fs
 const imagesIn = (d) => { try { return fs.readdirSync(d).filter(f => /\.(png|jpe?g|webp)$/i.test(f)).sort(); } catch { return []; } };
 const exists = (p) => fs.existsSync(p);
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function waitUntil(fn, timeout) {
+  const started = Date.now();
+  while (!fn()) {
+    if (Date.now() - started > timeout) throw new Error('timed out waiting for the run to make progress');
+    await sleep(50);
+  }
+}
+
 function useOutputs({ upscaled, compressed } = {}) {
   if (upscaled) store.set('paths.upscaled', upscaled); else store.delete('paths.upscaled');
   if (compressed) store.set('paths.compressed', compressed); else store.delete('paths.compressed');
@@ -197,6 +206,47 @@ async function compressionCases() {
     const r = await run([input]);
     check('clear error', !r.success && /isn't reachable/.test(r.error || ''), r.error);
     check('input untouched', exists(path.join(input, 'x.png')));
+  }
+
+  console.log('\nPause holds the run; resume finishes it');
+  {
+    const input = dir('in-pause');
+    for (let i = 0; i < 60; i++) img(input, `p${String(i).padStart(2, '0')}.png`, (i % 9) + 1, 24);
+    const out = dir('out-pause');
+    useOutputs({ compressed: out });
+    let latest = 0;
+    const running = pipeline.runPipeline({ queue: [input], settings: { pipelineMode: 'compress', outputMode: 'replace', caesiumQuality: 80 } },
+      (m) => { if (m.stage === 'compressing' && typeof m.current === 'number') latest = Math.max(latest, m.current); });
+    await waitUntil(() => latest >= 24, 60000);
+    pipeline.pause();
+    await sleep(3000);            // the batch already in flight may finish…
+    const held = latest;
+    await sleep(2500);            // …but nothing new may start
+    check('no progress while paused', latest === held && held < 60, `${held} → ${latest}`);
+    pipeline.resume();
+    const r = await running;
+    check('resumed run completes', r.success && r.compressedCount === 60, r.error || r.compressedCount);
+  }
+
+  console.log('\nCancel stops the run and leaves nothing half-done');
+  {
+    const input = dir('in-cancel');
+    for (let i = 0; i < 60; i++) img(input, `c${String(i).padStart(2, '0')}.png`, (i % 9) + 1, 24);
+    const out = dir('out-cancel');
+    useOutputs({ compressed: out });
+    let latest = 0;
+    const running = pipeline.runPipeline({ queue: [input], settings: { pipelineMode: 'compress', outputMode: 'replace', caesiumQuality: 80 } },
+      (m) => { if (m.stage === 'compressing' && typeof m.current === 'number') latest = Math.max(latest, m.current); });
+    await waitUntil(() => latest >= 24, 60000);
+    pipeline.cancel();
+    const r = await running;
+    const partial = imagesIn(out).length;
+    check('reports cancelled', r.cancelled === true && !r.success, JSON.stringify({ success: r.success, cancelled: r.cancelled }));
+    check('stopped part-way', partial > 0 && partial < 60, partial);
+    check('staging cleaned up', !exists(path.join(out, '.pixelforge-staging')));
+    const rerun = await run([input]);
+    check('next run replaces the partial results cleanly', rerun.success && imagesIn(out).length === 60 && !imagesIn(out).some(f => / \(\d+\)\./.test(f)),
+      `${imagesIn(out).length} files`);
   }
 
   console.log('\nOverlapping output folders are refused');
