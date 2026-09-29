@@ -30,14 +30,16 @@ All processing is 100% local. No cloud, no accounts, and no internet required af
 - **Three pipeline modes** — Upscale + Compress, Upscale only, or Compress only.
 - **7 bundled AI models** — all included in the installer, no separate download needed.
 - **GPU-accelerated** — Vulkan-powered inference via upscayl-ncnn (NVIDIA, AMD, Intel), with automatic priority for the dedicated GPU.
-- **Batch processing with live progress** — exact per-image counters, elapsed time, and ETA.
-- **Pause, resume, and cancel** — stop or hold a batch safely between images.
+- **Batch processing with live progress** — an always-visible run bar with per-image counts, ETA, and progress on the Windows taskbar.
+- **Pause, resume, and cancel** — pause takes effect within seconds; a cancelled run leaves nothing half-written.
+- **Keeps going past bad images** — a corrupt file is reported and skipped instead of stopping the whole batch.
 - **Input queue** — line up multiple folders and images in a single run, and remove any of them individually.
-- **Keep or replace previous results** — send every run to its own timestamped folder, or overwrite the last one.
+- **Keep or replace previous results** — send every run to its own timestamped folder, or replace the last run. Replace only ever removes files PixelForge created: anything else in the output folder is never touched, and results never overwrite each other.
 - **Recursive scanning** — optionally include subfolders and preserve their structure in the output.
-- **Before / after preview** — inspect results in a gallery with a side-by-side comparison slider.
+- **Before / after preview** — a comparison slider with zoom, pan and 1:1 actual-pixel view, fullscreen, and next / previous through every result.
 - **Custom output naming** — rename outputs with templates such as `{name}`, `{model}`, `{scale}`.
-- **Light and dark themes** with a customizable accent color.
+- **Light and dark themes** with a customizable accent colour — text stays readable (WCAG AA) whatever colour you pick.
+- **Settings save as you go** — paths are checked before they are saved, so a mistake is caught in Settings rather than mid-run.
 - **Keyboard shortcuts** for adding inputs, starting a run, and moving between pages.
 - **Desktop notifications** when a batch finishes.
 - **Built-in update checker** — checks GitHub for new releases and downloads them in-app.
@@ -58,7 +60,7 @@ All processing is 100% local. No cloud, no accounts, and no internet required af
 **[Download the latest release](https://github.com/refora-technologies/pixelforge/releases/latest)**
 
 - Windows 10 / 11 (64-bit)
-- Roughly 230 MB (includes all 7 AI models)
+- Roughly 275 MB (includes all 7 AI models)
 - No Upscayl installation required
 
 On first launch, PixelForge downloads two small command-line tools (the upscayl engine and Caesium CLT, about 25 MB total) and verifies them before use. The AI models are already bundled with the installer.
@@ -98,6 +100,8 @@ Full attribution and license texts are included in every installation via the EU
 
 ## Building from Source
 
+Requires Node.js 22.12 or newer.
+
 ```bash
 git clone https://github.com/refora-technologies/pixelforge.git
 cd pixelforge
@@ -114,6 +118,13 @@ npm start
 
 # Build the Windows installer (requires model files in src/models/)
 npm run build
+
+# Run the test suites (the pipeline tests use the engine binaries the app installs)
+npm test
+
+# Before publishing: walk the installer pages and verify the release through the real updater
+npm run verify:installer
+npm run verify:release
 ```
 
 ---
