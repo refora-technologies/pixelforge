@@ -9,8 +9,10 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "lint": "eslint .",
-    "test": "node tools/test-unit.js && node tools/test-updater.js && node tools/test-startup.js && electron tools/test-update-flow.js && electron tools/test-pipeline.js && electron tools/test-settings-ui.js && electron tools/test-compare-ui.js && electron tools/test-update-ui.js",
+    "check": "sh .githooks/pre-commit",
+    "test": "node tools/test-contract.js && node tools/test-unit.js && node tools/test-updater.js && node tools/test-startup.js && electron tools/test-update-flow.js && electron tools/test-pipeline.js && electron tools/test-settings-ui.js && electron tools/test-compare-ui.js && electron tools/test-update-ui.js",
     "test:unit": "node tools/test-unit.js",
+    "test:contract": "node tools/test-contract.js",
     "test:pipeline": "electron tools/test-pipeline.js",
     "test:settings": "electron tools/test-settings-ui.js",
     "test:compare": "electron tools/test-compare-ui.js",
@@ -21,7 +23,8 @@
     "verify:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-installer.ps1",
     "shoot": "electron tools/shoot.js",
     "build": "electron-builder --win",
-    "build:dir": "electron-builder --win --dir"
+    "build:dir": "electron-builder --win --dir",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "electron-store": "^8.2.0",
