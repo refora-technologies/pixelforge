@@ -63,19 +63,23 @@ app.whenReady().then(async () => {
     check('error explains the discard', threw && /checksum mismatch/i.test(threw.message), threw && threw.message);
     check('mismatched file deleted', !fs.existsSync(badPath));
 
-    // 3 — unusable checksum file degrades to unverified rather than failing
-    const noSum = await updater.downloadUpdate(`${base}/setup.exe`, 'NoSum-Setup.exe', `${base}/garbage.sha256`, () => {});
-    check('garbage checksum -> unverified', noSum.verified === false);
-    check('garbage checksum keeps file', fs.existsSync(noSum.path));
+    // 3 — an unreadable checksum is a refusal, and nothing is downloaded
+    const refuse = async (name, checksumUrl) => {
+      try { await updater.downloadUpdate(`${base}/setup.exe`, name, checksumUrl, () => {}); return null; }
+      catch (e) { return e; }
+    };
+    const garbage = await refuse('NoSum-Setup.exe', `${base}/garbage.sha256`);
+    check('garbage checksum is refused', garbage && /can't be verified/.test(garbage.message), garbage && garbage.message);
+    check('nothing downloaded for it', !fs.existsSync(path.join(DOWNLOADS, 'NoSum-Setup.exe')));
 
-    // 4 — release without a checksum asset
-    const legacy = await updater.downloadUpdate(`${base}/setup.exe`, 'Legacy-Setup.exe', '', () => {});
-    check('no checksum url -> unverified', legacy.verified === false);
-    check('no checksum url keeps file', fs.existsSync(legacy.path));
+    // 4 — a release without a checksum asset is refused before downloading
+    const legacy = await refuse('Legacy-Setup.exe', '');
+    check('missing checksum is refused', legacy && /doesn't publish a checksum/.test(legacy.message), legacy && legacy.message);
+    check('nothing downloaded for it', !fs.existsSync(path.join(DOWNLOADS, 'Legacy-Setup.exe')));
 
     // 5 — progress is reported
     let sawProgress = false;
-    await updater.downloadUpdate(`${base}/setup.exe`, 'Progress-Setup.exe', '', (pct) => {
+    await updater.downloadUpdate(`${base}/setup.exe`, 'Progress-Setup.exe', `${base}/good.sha256`, (pct) => {
       if (typeof pct === 'number' && pct >= 0 && pct <= 100) sawProgress = true;
     });
     check('progress callback fires', sawProgress);
@@ -91,6 +95,28 @@ app.whenReady().then(async () => {
     check('equal is not newer', !updater.isNewer('1.1.0', '1.1.0'));
     check('older is not newer', !updater.isNewer('1.0.2', '1.1.0'));
     check('1.1.0 > 1.1', updater.isNewer('1.1.1', '1.1'));
+
+    console.log('\nSILENT_UPDATE_ARGS');
+    const args = updater.SILENT_UPDATE_ARGS;
+    check('silent, as an update, relaunching', args.join(' ') === '/S --updated --force-run', args.join(' '));
+    check('frozen', Object.isFrozen(args));
+
+    console.log('\npendingUpdateOutcome');
+    const outcome = updater.pendingUpdateOutcome;
+    const now = Date.now();
+    const there = () => true, gone = () => false;
+    const rec = (o) => ({ from: '1.1.1', to: '1.2.0', installer: 'C:/x/PixelForge-Setup.exe', at: now - 5000, ...o });
+    check('nothing pending → nothing to say', outcome(null, '1.2.0') === null);
+    check('landed on the target → success', JSON.stringify(outcome(rec(), '1.2.0', now, there)) === JSON.stringify({ ok: true, version: '1.2.0' }));
+    check('landed past the target → success', outcome(rec(), '1.3.0', now, there).ok === true);
+    check('v-prefixed target still matches', outcome(rec({ to: 'v1.2.0' }), '1.2.0', now, there).ok === true);
+    check('unknown target → success', outcome(rec({ to: '' }), '1.1.1', now, there).ok === true);
+    const stuck = outcome(rec(), '1.1.1', now, there);
+    check('still old → failure with the installer', stuck && stuck.ok === false && stuck.to === '1.2.0' && stuck.current === '1.1.1' && stuck.installer === 'C:/x/PixelForge-Setup.exe', JSON.stringify(stuck));
+    check('installer since deleted → offered without it', outcome(rec(), '1.1.1', now, gone).installer === '');
+    check('stale record is dropped quietly', outcome(rec({ at: now - 8 * 864e5 }), '1.1.1', now, there) === null);
+    check('record without a time is dropped', outcome(rec({ at: undefined }), '1.1.1', now, there) === null);
+    check('junk record is ignored', outcome('junk', '1.1.1', now, there) === null);
   } catch (err) {
     failed++;
     console.log('  FAIL  unexpected error —', err.message);

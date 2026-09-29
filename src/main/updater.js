@@ -51,22 +51,23 @@ async function checkForUpdates() {
   }
 }
 
-// Downloads the installer and, when the release publishes a .sha256 next to it,
-// refuses to hand back anything whose digest doesn't match.
+// Downloads the installer and hands it back only if it matches the checksum
+// published beside it. No checksum, or one that can't be read, is a refusal
+// rather than a warning: an update that can't be verified isn't installed.
+// Every release since 1.1.0 publishes one.
 async function downloadUpdate(assetUrl, assetName, checksumUrl, onProgress) {
   if (!assetUrl) throw new Error('No download URL available.');
+  if (!checksumUrl) {
+    throw new Error("This release doesn't publish a checksum, so it can't be verified. Download it from the GitHub releases page instead.");
+  }
+
+  // Read the digest first — no point fetching the whole installer otherwise.
+  let expected = null;
+  try { expected = parseSha256(await fetchText(checksumUrl)); } catch {}
+  if (!expected) throw new Error("The release's checksum couldn't be read, so the update can't be verified. Try again later.");
+
   const dest = path.join(app.getPath('downloads'), assetName || 'PixelForge-Setup.exe');
   await downloadFile(assetUrl, dest, onProgress);
-
-  if (!checksumUrl) return { path: dest, verified: false };
-
-  let expected;
-  try {
-    expected = parseSha256(await fetchText(checksumUrl));
-  } catch {
-    expected = null;
-  }
-  if (!expected) return { path: dest, verified: false };
 
   const actual = await sha256File(dest);
   if (actual !== expected) {
@@ -76,4 +77,25 @@ async function downloadUpdate(assetUrl, assetName, checksumUrl, onProgress) {
   return { path: dest, verified: true, sha256: actual };
 }
 
-module.exports = { checkForUpdates, downloadUpdate, isNewer };
+// How a verified update is installed: silently (/S), as an update over the
+// existing copy (--updated keeps shortcuts and skips first-install steps), and
+// with PixelForge started again afterwards (--force-run). One click, no wizard.
+// The installer stops a still-running copy itself, so a slow exit can't leave
+// the old executable in place.
+const SILENT_UPDATE_ARGS = Object.freeze(['/S', '--updated', '--force-run']);
+
+// After a one-click update the app should come back as the version it
+// installed. If it didn't, say so and offer the full installer — silently
+// carrying on as the old version is what "updating does nothing" looks like.
+const PENDING_UPDATE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+function pendingUpdateOutcome(pending, current, now = Date.now(), exists = fs.existsSync) {
+  if (!pending || typeof pending !== 'object') return null;
+  const to = String(pending.to || '');
+  if (!to || to.replace(/^v/i, '') === current || isNewer(current, to)) return { ok: true, version: current };
+  // A stale record from long ago isn't worth alarming anyone about.
+  if (!(now - (Number(pending.at) || 0) <= PENDING_UPDATE_MAX_AGE_MS)) return null;
+  const installer = typeof pending.installer === 'string' && pending.installer && exists(pending.installer) ? pending.installer : '';
+  return { ok: false, current, to: to.replace(/^v/i, ''), installer };
+}
+
+module.exports = { checkForUpdates, downloadUpdate, isNewer, pendingUpdateOutcome, SILENT_UPDATE_ARGS };
