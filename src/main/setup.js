@@ -40,9 +40,22 @@ function detectUpscaylInstallation() {
   return { found: false };
 }
 
+// Only fills a gap. PixelForge's own checksum-verified engine always wins, and
+// a configured path is never overwritten while it still works — an Upscayl GUI
+// install is borrowed only when nothing else is available.
+function repairBinaryPaths(detected) {
+  if (!fs.existsSync(paths.getUpscaylBin())) {
+    if (fs.existsSync(paths.defaultUpscaylBin())) store.delete('paths.upscaylBin');
+    else if (detected.found) store.set('paths.upscaylBin', detected.binPath);
+  }
+  if (!fs.existsSync(paths.getCaesiumBin()) && fs.existsSync(paths.defaultCaesiumBin())) {
+    store.delete('paths.caesiumBin');
+  }
+}
+
 function checkSetup() {
   const detected = detectUpscaylInstallation();
-  if (detected.found) store.set('paths.upscaylBin', detected.binPath);
+  repairBinaryPaths(detected);
 
   const upscaylBinOk = fs.existsSync(paths.getUpscaylBin());
   const modelsDir = paths.getModelsDir();

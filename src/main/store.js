@@ -24,6 +24,11 @@ try {
       data[key] = value;
       fs.writeFileSync(cfgPath, JSON.stringify(data, null, 2));
     },
+    delete: (key) => {
+      const data = loadCfg();
+      delete data[key];
+      fs.writeFileSync(cfgPath, JSON.stringify(data, null, 2));
+    },
   };
 }
 
