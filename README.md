@@ -130,6 +130,9 @@ npm test
 npm run verify:installer
 npm run verify:release
 
+# Install an older release, then update it the way "Restart to update" does (on a PC without PixelForge installed)
+npm run verify:update-install -- -Old path\to\older\PixelForge-Setup.exe
+
 # After publishing: check the live release the way installed copies will see it
 npm run verify:published -- --download
 ```
