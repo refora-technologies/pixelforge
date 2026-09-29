@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen, powerSaveBlocker } = require('electron');
 const path = require('path');
 
 const store = require('./src/main/store');
@@ -200,23 +200,61 @@ ipcMain.handle('scan-inputs', async (_, inputs, recursive) => {
 });
 
 // ── Pipeline ──
+
+// Upscaling dominates run time, so it gets most of the taskbar bar; an even
+// split would leap to 50% the moment upscaling ended.
+const STAGE_WEIGHTS = {
+  both: { upscaling: [0, 0.85], compressing: [0.85, 0.15] },
+  upscale: { upscaling: [0, 1] },
+  compress: { compressing: [0, 1] },
+};
+
+function runFraction(mode, msg) {
+  if (msg.stage === 'complete') return 1;
+  const span = (STAGE_WEIGHTS[mode] || STAGE_WEIGHTS.both)[msg.stage];
+  return span ? span[0] + span[1] * Math.min(1, (msg.percent || 0) / 100) : null;
+}
+
+let lastFraction = 0;
+
+function setTaskbarProgress(fraction, mode = 'normal') {
+  if (fraction >= 0 && fraction <= 1) lastFraction = fraction;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setProgressBar(fraction, { mode });
+}
+
 ipcMain.handle('start-pipeline', async (_, { queue, inputFolder, settings }) => {
   const folders = Array.isArray(queue) && queue.length ? queue : (inputFolder ? [inputFolder] : []);
+  const mode = settings?.pipelineMode || 'both';
+  // Long batches shouldn't stop because the PC went to sleep.
+  const blocker = powerSaveBlocker.start('prevent-app-suspension');
+  lastFraction = 0;
+  setTaskbarProgress(2, 'indeterminate');
   try {
-    const result = await pipeline.runPipeline({ queue: folders, settings }, (msg) => send('pipeline-progress', msg));
+    const result = await pipeline.runPipeline({ queue: folders, settings }, (msg) => {
+      send('pipeline-progress', msg);
+      const fraction = runFraction(mode, msg);
+      if (fraction !== null) setTaskbarProgress(fraction, pipeline.isPaused() ? 'paused' : 'normal');
+    });
     if (result.success) {
       send('pipeline-done', result);
       notifyDone(result, settings);
+      if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true);
     }
+    setTaskbarProgress(-1);
     return result;
   } catch (err) {
     send('pipeline-progress', { stage: 'error', status: 'error', message: err.message });
+    setTaskbarProgress(1, 'error');
+    setTimeout(() => { if (!pipeline.isRunning()) setTaskbarProgress(-1); }, 4000);
     return { success: false, error: err.message };
+  } finally {
+    powerSaveBlocker.stop(blocker);
   }
 });
 ipcMain.handle('cancel-pipeline', () => pipeline.cancel());
-ipcMain.handle('pause-pipeline', () => pipeline.pause());
-ipcMain.handle('resume-pipeline', () => pipeline.resume());
+ipcMain.handle('pause-pipeline', () => { pipeline.pause(); if (pipeline.isRunning()) setTaskbarProgress(lastFraction, 'paused'); });
+ipcMain.handle('resume-pipeline', () => { pipeline.resume(); if (pipeline.isRunning()) setTaskbarProgress(lastFraction, 'normal'); });
 
 function notifyDone(result, settings) {
   if (!settings?.notifyOnComplete || !Notification.isSupported()) return;
