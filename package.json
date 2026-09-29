@@ -16,6 +16,7 @@
     "test:startup": "node tools/test-startup.js",
     "test:update-flow": "electron tools/test-update-flow.js",
     "verify:release": "electron tools/verify-release.js",
+    "verify:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/verify-installer.ps1",
     "shoot": "electron tools/shoot.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir"
