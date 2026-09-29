@@ -82,12 +82,13 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
+  // Show the frame straight away, filled with the theme's background, rather
+  // than waiting for the first paint. On a cold start (first launch after an
+  // install) that wait is seconds of nothing, which reads as "it won't open".
+  if (saved?.maximized) mainWindow.maximize();
+  mainWindow.show();
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
-  mainWindow.once('ready-to-show', () => {
-    if (saved?.maximized) mainWindow.maximize();
-    mainWindow.show();
-    maybeAutoCheckUpdates();
-  });
+  mainWindow.once('ready-to-show', maybeAutoCheckUpdates);
 
   mainWindow.on('maximize', () => send('window-maximized-changed', true));
   mainWindow.on('unmaximize', () => send('window-maximized-changed', false));
