@@ -312,6 +312,7 @@ async function init() {
   window.pixelforge.onPipelineProgress(onPipelineProgress);
   window.pixelforge.onPipelineDone(onPipelineDone);
   window.pixelforge.onUpdateAvailable(onUpdateAvailable);
+  window.pixelforge.onUpdateResult(onUpdateResult);
   window.pixelforge.onMaximizedChanged(setMaximizeIcon);
 
   settings = await window.pixelforge.getSettings();
@@ -1050,6 +1051,7 @@ function setRunningUI(running, paused) {
   for (const id of ['btn-browse', 'btn-browse-files', 'btn-clear-queue']) $(id).disabled = running;
   document.querySelectorAll('#mode-seg .seg-btn, .queue-item-remove').forEach(b => { b.disabled = running; });
   $('btn-scan').disabled = running || !queue.length;
+  syncInstallButton();
 }
 
 function onPipelineProgress(data) {
@@ -1695,12 +1697,30 @@ function populateSettingsForm() {
 }
 
 // ─── Updates ────────────────────────────────────────────────────────────────
+// Check → download and verify → "Restart to update": the installer runs
+// silently over this copy and PixelForge opens again as the new version. The
+// full setup wizard stays available as a fallback.
+let updateBusy = false;
+let bannerAction = null;
+
 function wireUpdates() {
   $('btn-check-updates').addEventListener('click', () => doCheckUpdates(true));
   $('btn-download-update').addEventListener('click', doDownloadUpdate);
-  $('btn-run-installer').addEventListener('click', () => lastUpdate?.path && window.pixelforge.runInstaller(lastUpdate.path));
+  $('btn-install-update').addEventListener('click', doInstallUpdate);
+  $('btn-run-installer').addEventListener('click', () => lastUpdate?.path && runInstallerWizard(lastUpdate.path));
   $('update-banner-dismiss').addEventListener('click', () => $('update-banner').classList.add('hidden'));
-  $('update-banner-btn').addEventListener('click', () => { $('update-banner').classList.add('hidden'); navigateTo('settings'); if (lastUpdate) presentUpdate(lastUpdate); });
+  $('update-banner-btn').addEventListener('click', () => {
+    $('update-banner').classList.add('hidden');
+    if (bannerAction) bannerAction();
+  });
+}
+function showBanner({ title, sub, actionLabel, action, tone = 'info' }) {
+  $('update-banner-title').textContent = title;
+  $('update-banner-sub').textContent = sub;
+  $('update-banner-btn-label').textContent = actionLabel;
+  $('update-banner').dataset.tone = tone;
+  bannerAction = action;
+  $('update-banner').classList.remove('hidden');
 }
 async function doCheckUpdates(showStatus) {
   const btn = $('btn-check-updates');
@@ -1726,7 +1746,9 @@ function presentUpdate(result) {
   $('upd-download-wrap').classList.remove('hidden');
   $('upd-asset-name').textContent = result.assetName || 'PixelForge Setup';
   $('btn-download-update').classList.remove('hidden');
+  $('btn-install-update').classList.add('hidden');
   $('btn-run-installer').classList.add('hidden');
+  $('upd-dl-bar').classList.remove('done');
   $('upd-dl-bar').style.width = '0%';
   $('upd-dl-pct').textContent = '0%';
 }
@@ -1738,7 +1760,10 @@ function showUpdateStatus(type, text) {
 }
 async function doDownloadUpdate() {
   if (!lastUpdate?.assetUrl) { showUpdateStatus('error', 'No installer asset found for this release.'); return; }
+  if (updateBusy) return;
+  updateBusy = true;
   $('btn-download-update').disabled = true;
+  showUpdateStatus('info', `Downloading version ${lastUpdate.latest} and checking it against its published checksum…`);
   window.pixelforge.removeAllListeners('update-progress');
   window.pixelforge.onUpdateProgress((d) => {
     $('upd-dl-bar').style.width = (d.percent || 0) + '%';
@@ -1749,23 +1774,64 @@ async function doDownloadUpdate() {
     assetName: lastUpdate.assetName,
     checksumUrl: lastUpdate.checksumUrl,
   });
+  updateBusy = false;
   $('btn-download-update').disabled = false;
-  if (res.success) {
-    lastUpdate.path = res.path;
-    $('upd-dl-bar').classList.add('done');
-    showUpdateStatus(res.verified ? 'success' : 'warning', res.verified
-      ? 'Download verified against its SHA-256 checksum. Run the installer to update.'
-      : 'Download complete, but this release published no checksum to verify it against.');
-    $('btn-run-installer').classList.remove('hidden');
-  } else {
-    showUpdateStatus('error', res.error || 'Download failed.');
+  if (!res.success) { showUpdateStatus('error', res.error || 'Download failed.'); return; }
+
+  lastUpdate.path = res.path;
+  $('upd-dl-bar').classList.add('done');
+  showUpdateStatus('success', `Version ${lastUpdate.latest} is downloaded and verified. Restarting installs it — PixelForge closes and opens again by itself.`);
+  $('btn-download-update').classList.add('hidden');
+  $('btn-install-update').classList.remove('hidden');
+  $('btn-run-installer').classList.remove('hidden');
+  syncInstallButton();
+}
+// Updating closes the app, so it waits for a run in progress.
+function syncInstallButton() {
+  const btn = $('btn-install-update');
+  btn.disabled = pipelineRunning;
+  btn.title = pipelineRunning ? 'Available when the current run finishes' : '';
+}
+async function doInstallUpdate() {
+  if (!lastUpdate?.path) return;
+  if (pipelineRunning) { showUpdateStatus('error', 'Finish or cancel the current run first — updating closes PixelForge.'); return; }
+  $('btn-install-update').disabled = true;
+  $('update-overlay-version').textContent = `v${lastUpdate.latest}`;
+  $('update-overlay').classList.remove('hidden');
+  const res = await window.pixelforge.installUpdate({ installerPath: lastUpdate.path, version: lastUpdate.latest });
+  if (!res.ok) {
+    $('update-overlay').classList.add('hidden');
+    syncInstallButton();
+    showUpdateStatus('error', res.error || 'The update could not be started.');
   }
+  // On success the app closes in a moment; the overlay stays up until then.
+}
+async function runInstallerWizard(installerPath) {
+  const res = await window.pixelforge.runInstaller(installerPath);
+  if (res && !res.ok) showUpdateStatus('error', res.error || 'The installer could not be opened.');
 }
 function onUpdateAvailable(result) {
   lastUpdate = result;
-  $('update-banner-title').textContent = `PixelForge ${result.latest} is available`;
-  $('update-banner-sub').textContent = `You're on v${result.current}. Update from Settings.`;
-  $('update-banner').classList.remove('hidden');
+  showBanner({
+    title: `PixelForge ${result.latest} is available`,
+    sub: `You're on v${result.current}. Updating takes one click and PixelForge reopens by itself.`,
+    actionLabel: 'Update',
+    action: () => { navigateTo('settings'); presentUpdate(result); doDownloadUpdate(); },
+  });
+}
+// Reported on the first launch after a one-click update.
+function onUpdateResult(r) {
+  if (!r) return;
+  if (r.ok) { toast(`PixelForge is updated to v${r.version}.`, 'success', 6000); return; }
+  showBanner({
+    title: `The update to v${r.to} didn't finish`,
+    sub: `PixelForge is still v${r.current}. ${r.installer ? 'Open the installer to finish updating.' : 'Download it again from Settings.'}`,
+    actionLabel: r.installer ? 'Open installer' : 'Go to updates',
+    action: r.installer
+      ? () => { navigateTo('settings'); runInstallerWizard(r.installer); }
+      : () => { navigateTo('settings'); doCheckUpdates(true); },
+    tone: 'warn',
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

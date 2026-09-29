@@ -164,7 +164,7 @@
           <div class="update-banner-title" id="update-banner-title">A new version is available</div>
           <div class="update-banner-sub" id="update-banner-sub"></div>
         </div>
-        <button class="btn btn-primary btn-sm" id="update-banner-btn"><svg width="13" height="13"><use href="#ic-download"/></svg> Update</button>
+        <button class="btn btn-primary btn-sm" id="update-banner-btn"><svg width="13" height="13"><use href="#ic-download"/></svg> <span id="update-banner-btn-label">Update</span></button>
         <button class="btn btn-ghost btn-sm" id="update-banner-dismiss">Later</button>
       </div>
 
@@ -389,9 +389,10 @@
                 <div class="alert alert-info" id="upd-status"><div class="alert-icon"><svg width="14" height="14"><use href="#ic-info"/></svg></div><span id="upd-status-text"></span></div>
                 <div id="upd-download-wrap" class="hidden mt-12">
                   <div class="dl-block"><div class="dl-label-row"><span class="dl-name" id="upd-asset-name">Update</span><span class="dl-pct" id="upd-dl-pct">0%</span></div><div class="dl-track"><div class="dl-fill" id="upd-dl-bar"></div></div></div>
-                  <div style="display:flex;gap:8px;margin-top:12px;">
-                    <button class="btn btn-primary btn-sm" id="btn-download-update"><svg width="13" height="13"><use href="#ic-download"/></svg> Download Update</button>
-                    <button class="btn btn-secondary btn-sm hidden" id="btn-run-installer"><svg width="13" height="13"><use href="#ic-external"/></svg> Run Installer</button>
+                  <div class="upd-actions">
+                    <button class="btn btn-primary btn-sm" id="btn-download-update"><svg width="13" height="13"><use href="#ic-download"/></svg> Download &amp; verify</button>
+                    <button class="btn btn-primary btn-sm hidden" id="btn-install-update"><svg width="13" height="13"><use href="#ic-refresh"/></svg> Restart to update</button>
+                    <button class="btn btn-ghost btn-sm hidden" id="btn-run-installer" title="Opens the full setup wizard instead"><svg width="13" height="13"><use href="#ic-external"/></svg> Use the installer</button>
                   </div>
                 </div>
               </div>
@@ -498,6 +499,14 @@
     <div class="cmp-foot">
       <span class="cmp-hint">Drag the divider · Scroll to zoom, drag to pan · <kbd>←</kbd><kbd>→</kbd> previous / next · <kbd>1</kbd> actual pixels · <kbd>F</kbd> fullscreen · <kbd>Esc</kbd> close</span>
     </div>
+  </div>
+</div>
+
+<div id="update-overlay" class="update-overlay hidden" role="alertdialog" aria-live="assertive" aria-labelledby="update-overlay-title">
+  <div class="update-overlay-card">
+    <div class="update-overlay-spinner"><svg width="22" height="22" class="spin"><use href="#ic-refresh"/></svg></div>
+    <div class="update-overlay-title" id="update-overlay-title">Updating PixelForge to <span id="update-overlay-version"></span></div>
+    <div class="update-overlay-sub">PixelForge closes now and opens again by itself in a few seconds.</div>
   </div>
 </div>
 

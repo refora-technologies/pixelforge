@@ -52,7 +52,9 @@ contextBridge.exposeInMainWorld('pixelforge', {
   // Updates
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   downloadUpdate: (args) => ipcRenderer.invoke('download-update', args),
+  installUpdate: (args) => ipcRenderer.invoke('install-update', args),
   runInstaller: (path) => ipcRenderer.invoke('run-installer', path),
+  onUpdateResult: (cb) => ipcRenderer.on('update-result', (e, data) => cb(data)),
   onUpdateProgress: (cb) => ipcRenderer.on('update-progress', (e, data) => cb(data)),
   onUpdateAvailable: (cb) => ipcRenderer.on('update-available', (e, data) => cb(data)),
 

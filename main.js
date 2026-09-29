@@ -13,6 +13,8 @@ const updater = require('./src/main/updater');
 const pipeline = require('./src/main/pipeline');
 const { collectInputs } = require('./src/main/scan');
 const guard = require('./src/main/guard');
+const { sha256File } = require('./src/main/download');
+const { spawn } = require('child_process');
 
 // One window, one pipeline. A second instance would share the same settings
 // and output folders, and two Replace-mode runs would clean up each other's work.
@@ -90,6 +92,10 @@ function createWindow() {
   mainWindow.show();
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   mainWindow.once('ready-to-show', maybeAutoCheckUpdates);
+  mainWindow.webContents.once('did-finish-load', () => {
+    const outcome = takePendingUpdateOutcome();
+    if (outcome) send('update-result', outcome);
+  });
 
   mainWindow.on('maximize', () => send('window-maximized-changed', true));
   mainWindow.on('unmaximize', () => send('window-maximized-changed', false));
@@ -119,6 +125,14 @@ function onWindowClose(e) {
     return;
   }
   saveBounds();
+}
+
+// Reported once, on the first launch after a one-click update.
+function takePendingUpdateOutcome() {
+  const pending = store.get('app.pendingUpdate', null);
+  if (!pending) return null;
+  store.delete('app.pendingUpdate');
+  return updater.pendingUpdateOutcome(pending, app.getVersion());
 }
 
 async function maybeAutoCheckUpdates() {
@@ -360,15 +374,53 @@ ipcMain.handle('list-gpus', (_, opts) => gpu.listGpus(opts));
 
 // ── Updates ──
 ipcMain.handle('check-updates', () => updater.checkForUpdates());
+// Installers this session downloaded and verified: path → digest. Only these
+// can be installed with one click, and each is hashed again first — it has sat
+// in Downloads, where anything could have replaced it since.
+const verifiedInstallers = new Map();
+
+async function verificationProblem(installerPath) {
+  const expected = verifiedInstallers.get(installerPath);
+  if (!expected) return 'That installer wasn’t downloaded and verified by PixelForge in this session.';
+  try { if ((await sha256File(installerPath)) === expected) return null; } catch {}
+  verifiedInstallers.delete(installerPath);
+  try { fs.rmSync(installerPath, { force: true }); } catch {}
+  return 'The downloaded installer changed after it was verified, so it wasn’t run. Download the update again.';
+}
+
 ipcMain.handle('download-update', async (_, { assetUrl, assetName, checksumUrl }) => {
   try {
     const result = await updater.downloadUpdate(assetUrl, assetName, checksumUrl,
       (pct) => send('update-progress', { percent: pct }));
-    return { success: true, path: result.path, verified: result.verified, sha256: result.sha256 || '' };
+    verifiedInstallers.set(result.path, result.sha256);
+    return { success: true, path: result.path, sha256: result.sha256 };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
+
+// One click: the installer runs silently over this copy and starts PixelForge
+// again when it's done. The app closes itself so no file is left in use.
+ipcMain.handle('install-update', async (_, { installerPath, version } = {}) => {
+  if (pipeline.isRunning()) return { ok: false, error: 'Finish or cancel the current run first — updating closes PixelForge.' };
+  const problem = await verificationProblem(installerPath);
+  if (problem) return { ok: false, error: problem };
+  try {
+    const child = spawn(installerPath, updater.SILENT_UPDATE_ARGS, { detached: true, stdio: 'ignore' });
+    await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+    child.unref();
+  } catch (err) {
+    return { ok: false, error: `Couldn't start the installer: ${err.message}` };
+  }
+  // Checked on the next launch, so an update that didn't take is reported
+  // instead of the app quietly carrying on as the old version.
+  store.set('app.pendingUpdate', { from: app.getVersion(), to: String(version || ''), installer: installerPath, at: Date.now() });
+  forceQuit = true;
+  setTimeout(() => app.quit(), 600); // long enough that the screen is never blank
+  return { ok: true };
+});
+
+// The full setup wizard — the fallback when one-click updating didn't finish.
 ipcMain.handle('run-installer', async (_, installerPath) => {
   // Only ever launch the installer this session downloaded into Downloads.
   if (!/PixelForge-Setup.*\.exe$/i.test(String(installerPath)) ||
