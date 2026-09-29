@@ -397,26 +397,64 @@ function wireShortcuts() {
 }
 
 // ─── Theme / accent ─────────────────────────────────────────────────────────
+let currentAccent = '#6366f1';
+
 function applyTheme(theme) {
   const value = theme === 'light' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', value);
   document.querySelectorAll('#theme-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === value));
   syncSegmented($('theme-seg'));
+  applyAccentColor(currentAccent); // accent text shades depend on the theme
   try { localStorage.setItem('pf.theme', value); } catch {}
 }
+
+const hexChannels = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+const toHex = (channels) => '#' + channels.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+function mixHex(a, b, t) {
+  const x = hexChannels(a), y = hexChannels(b);
+  return toHex(x.map((v, i) => v + (y[i] - v) * t));
+}
+function luminance(hex) {
+  const [r, g, b] = hexChannels(hex).map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(a, b) {
+  const x = luminance(a), y = luminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+// Derives every accent token from the one colour the user picks, for the active
+// theme, so any accent keeps text readable (WCAG AA) on and around it.
 function applyAccentColor(hex) {
-  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  if (!/^#[0-9a-f]{6}$/i.test(hex || '')) hex = '#6366f1';
+  currentAccent = hex;
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+
+  // Solid accent surfaces: keep white text by deepening the fill slightly; a
+  // very light accent (yellow, mint) switches to dark text instead.
+  let fill = hex;
+  let onAccent = '#ffffff';
+  for (let amt = 0; contrastRatio('#ffffff', fill) < 4.5 && amt <= 60; amt += 4) fill = shadeHex(hex, -amt);
+  if (contrastRatio('#ffffff', fill) < 4.5) { fill = hex; onAccent = '#0b0b12'; }
+
+  // Accent-coloured text on panels: lighten (dark theme) or deepen (light theme)
+  // until it reads against the busiest panel shade.
+  const panel = dark ? '#16161f' : '#f7f8fc';
+  const toward = dark ? '#ffffff' : '#000000';
+  let soft = mixHex(hex, toward, dark ? 0.35 : 0.1);
+  for (let t = dark ? 0.35 : 0.1; contrastRatio(soft, panel) < 4.5 && t < 0.95; t += 0.05) soft = mixHex(hex, toward, t);
+
   const root = document.documentElement.style;
   root.setProperty('--accent', hex);
-  root.setProperty('--accent-hover', shadeHex(hex, -20));
-  root.setProperty('--accent-muted', `rgba(${r},${g},${b},0.12)`);
-  root.setProperty('--accent-glow', `rgba(${r},${g},${b},0.18)`);
-  root.setProperty('--border-accent', `rgba(${r},${g},${b},0.4)`);
+  root.setProperty('--accent-rgb', hexChannels(hex).join(', '));
+  root.setProperty('--accent-fill', fill);
+  root.setProperty('--on-accent', onAccent);
+  root.setProperty('--accent-hover', shadeHex(fill, -16));
+  root.setProperty('--accent-soft', soft);
   try { localStorage.setItem('pf.accent', hex); } catch {}
 }
 function shadeHex(hex, amt) {
-  const c = [1, 3, 5].map(i => Math.min(255, Math.max(0, parseInt(hex.slice(i, i + 2), 16) + amt)));
-  return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+  return toHex(hexChannels(hex).map(v => v + amt));
 }
 
 // ─── Models / GPUs ──────────────────────────────────────────────────────────

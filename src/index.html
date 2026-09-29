@@ -13,7 +13,11 @@
       var t = localStorage.getItem('pf.theme');
       if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
       var a = localStorage.getItem('pf.accent');
-      if (a && /^#[0-9a-f]{6}$/i.test(a)) document.documentElement.style.setProperty('--accent', a);
+      if (a && /^#[0-9a-f]{6}$/i.test(a)) {
+        var s = document.documentElement.style;
+        s.setProperty('--accent', a);
+        s.setProperty('--accent-rgb', [1, 3, 5].map(function (i) { return parseInt(a.slice(i, i + 2), 16); }).join(', '));
+      }
     } catch (e) {}
   </script>
 </head>
