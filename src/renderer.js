@@ -1291,9 +1291,46 @@ function updateOutputPathDisplays() {
 }
 
 // ─── Gallery + compare ──────────────────────────────────────────────────────
+// Tiles show a small copy made by Windows (get-thumbnail) rather than the result
+// itself, fetched a few at a time as tiles come near the viewport.
+const THUMBS_AT_ONCE = 4;
+let thumbObs = null;
+let thumbQueue = [];
+let thumbsActive = 0;
+
+function thumbObserver() {
+  thumbObs = thumbObs || new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      thumbObs.unobserve(e.target);
+      thumbQueue.push(e.target);
+    }
+    pumpThumbs();
+  }, { root: $('content'), rootMargin: '600px 0px' });
+  return thumbObs;
+}
+
+function resetThumbs() {
+  if (thumbObs) thumbObs.disconnect();
+  thumbQueue = [];
+}
+
+function pumpThumbs() {
+  while (thumbsActive < THUMBS_AT_ONCE && thumbQueue.length) {
+    const img = thumbQueue.shift();
+    if (!img.isConnected) continue;
+    thumbsActive++;
+    window.pixelforge.getThumbnail(img.dataset.src)
+      .catch(() => null)
+      .then((url) => { if (img.isConnected) img.src = url || fileUrl(img.dataset.src); })
+      .finally(() => { thumbsActive--; pumpThumbs(); });
+  }
+}
+
 function renderGallery(results) {
   const grid = $('gallery-grid');
   const more = $('gallery-more');
+  resetThumbs();
   grid.innerHTML = '';
   const items = (results || []).filter(r => r.upscaled || r.compressed);
   if (!items.length) { $('results-card').classList.add('hidden'); return; }
@@ -1323,7 +1360,7 @@ function renderGallery(results) {
     tile.className = 'gallery-tile';
     tile.title = name;
     tile.innerHTML =
-      `<img loading="lazy" src="${fileUrl(thumb)}" alt=""/>` +
+      `<img alt="" decoding="async"/>` +
       `<div class="gallery-tile-overlay"><div class="gallery-tile-name">${escapeHtml(name)}</div>` +
       `<div class="gallery-actions">` +
       (canCompare ? `<button class="gallery-action" data-act="compare" title="Compare"><svg width="14" height="14"><use href="#ic-compare"/></svg></button>` : '') +
@@ -1336,7 +1373,11 @@ function renderGallery(results) {
     const cmpBtn = tile.querySelector('[data-act="compare"]');
     if (cmpBtn) cmpBtn.addEventListener('click', (e) => { e.stopPropagation(); openCompare(r.original, processed, name, kind); });
     tile.addEventListener('click', () => canCompare ? openCompare(r.original, processed, name, kind) : window.pixelforge.openFile(openTarget));
+    const img = tile.querySelector('img');
+    img.dataset.src = thumb;
+    img.addEventListener('load', () => img.classList.add('is-loaded'), { once: true });
     grid.appendChild(tile);
+    thumbObserver().observe(img);
   }
 
   if (items.length > GALLERY_LIMIT) {
@@ -1464,11 +1505,13 @@ function wireCompareModal() {
     layoutCompare();
     setCmpPos(cmpPos);
   });
-  window.addEventListener('resize', () => {
+  // Re-fit whenever the frame changes size: fullscreen, window resize, maximise.
+  // Measuring once after a toggle caught the frame mid-change and kept that size.
+  new ResizeObserver(() => {
     if ($('compare-modal').classList.contains('hidden')) return;
     layoutCompare();
     setCmpPos(cmpPos);
-  });
+  }).observe(frame);
 }
 
 function showCompareItem() {
@@ -1521,7 +1564,7 @@ function toggleCompareFullscreen(force) {
   $('compare-card').classList.toggle('is-fullscreen', cmpFullscreen);
   $('compare-expand-icon').setAttribute('href', cmpFullscreen ? '#ic-collapse' : '#ic-expand');
   $('compare-expand').title = cmpFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
-  requestAnimationFrame(() => { layoutCompare(); setCmpPos(cmpPos); });
+  window.pixelforge.setFullScreen(cmpFullscreen);
 }
 
 function setCmpPos(p) {

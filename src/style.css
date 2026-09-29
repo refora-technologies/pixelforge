@@ -416,7 +416,7 @@ body.drag-active .drop-overlay-inner { transform: none; }
 
 
 /* ─── Status badge ──────────────────────────────────────────────────────────── */
-.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; transition: all var(--transition); }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; transition: background var(--transition), color var(--transition), border-color var(--transition); }
 .status-badge.ready { background: var(--accent-muted); color: var(--accent-soft); border: 1px solid rgba(var(--accent-rgb), 0.25); }
 .status-badge.running { background: rgba(var(--accent-rgb), 0.15); color: var(--accent-soft); border: 1px solid rgba(var(--accent-rgb), 0.35); animation: breathe 2s ease-in-out infinite; }
 .status-badge.paused { background: var(--yellow-muted); color: var(--yellow-text); border: 1px solid rgba(245,158,11,0.3); }
@@ -499,7 +499,7 @@ body.is-running .queue-list { opacity: 0.72; }
 .stage-header { display: flex; align-items: center; justify-content: space-between; }
 .stage-title { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; color: var(--text-1); }
 .stage-icon-wrap { color: var(--text-3); flex-shrink: 0; display: flex; }
-.stage-pill { font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; transition: all var(--transition); }
+.stage-pill { font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; padding: 3px 9px; border-radius: 20px; text-transform: uppercase; transition: background var(--transition), color var(--transition), border-color var(--transition); }
 .pill-wait { background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border-1); }
 .pill-run { background: rgba(var(--accent-rgb), 0.15); color: var(--accent-soft); border: 1px solid rgba(var(--accent-rgb), 0.3); animation: breathe 2s infinite; }
 .pill-done { background: var(--green-muted); color: var(--green-text); border: 1px solid rgba(34,197,94,0.25); }
@@ -551,7 +551,8 @@ body.is-running .queue-list { opacity: 0.72; }
 }
 .gallery-tile:hover { border-color: var(--border-accent); transform: translateY(-3px); box-shadow: var(--shadow-lift); }
 .gallery-tile:active { transform: translateY(-1px) scale(0.99); }
-.gallery-tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s var(--ease); }
+.gallery-tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 0.25s var(--ease), transform 0.4s var(--ease); }
+.gallery-tile img.is-loaded { opacity: 1; }
 .gallery-tile:hover img { transform: scale(1.045); }
 .gallery-tile-overlay {
   position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.82), transparent 58%);
@@ -562,9 +563,9 @@ body.is-running .queue-list { opacity: 0.72; }
 .gallery-tile-name { font-size: 10.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gallery-actions { display: flex; gap: 6px; }
 .gallery-action {
-  width: 28px; height: 28px; border: none; border-radius: 7px; background: rgba(255,255,255,0.16);
+  width: 28px; height: 28px; border: none; border-radius: 7px; background: rgba(255,255,255,0.2);
   color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(6px); transition: background 0.16s var(--ease), transform 0.18s var(--spring);
+  transition: background 0.16s var(--ease), transform 0.18s var(--spring);
 }
 .gallery-action:hover { background: var(--accent-fill); color: var(--on-accent); transform: scale(1.1); }
 .gallery-action:active { transform: scale(0.94); }
@@ -596,7 +597,6 @@ body.is-running .queue-list { opacity: 0.72; }
   background: var(--panel); border: 1px solid var(--border-2); border-radius: var(--radius-xl);
   padding: 20px; width: min(860px, 92vw); max-height: 90vh; box-shadow: var(--shadow-lift);
   animation: modal-in 0.34s var(--spring);
-  transition: width 0.3s var(--ease), height 0.3s var(--ease), border-radius 0.3s var(--ease), padding 0.3s var(--ease);
 }
 @keyframes modal-in { from { opacity: 0; transform: translateY(16px) scale(0.975); } to { opacity: 1; transform: none; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 15px; flex-shrink: 0; }

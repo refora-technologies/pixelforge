@@ -79,6 +79,13 @@ app.whenReady().then(async () => {
     await waitFor(`document.getElementById('cmp-img-base').naturalWidth === 1600 && cmpView.natW === 1600`);
     await sleep(200);
 
+    console.log('\nthumbnails');
+    await waitFor(`[...document.querySelectorAll('#gallery-grid img')].every(i => i.classList.contains('is-loaded'))`);
+    const thumbs = await js(`[...document.querySelectorAll('#gallery-grid img')].map(i => ({ src: i.src.slice(0, 22), w: i.naturalWidth }))`);
+    check('tiles show small thumbnails, not the full results', thumbs.length === 2 && thumbs.every(t => t.src.startsWith('data:image/png;base64,') && t.w <= 320), JSON.stringify(thumbs));
+    const refused = await js(`window.pixelforge.getThumbnail(${JSON.stringify(path.join(process.env.SystemRoot || 'C:\\Windows', 'notepad.exe'))})`);
+    check('thumbnails only for images', refused === null);
+
     console.log('\nfit');
     let v = await view();
     check('opens on the first result', v.counter === '1 of 2', v.counter);
@@ -146,9 +153,17 @@ app.whenReady().then(async () => {
     check('← goes back', (await view()).counter === '1 of 2');
 
     console.log('\nclosing');
-    key('F'); await sleep(250);
+    const windowed = await view();
+    key('F'); await sleep(900);
     check('F enters fullscreen', await js(`document.getElementById('compare-card').classList.contains('is-fullscreen')`));
-    key('Escape'); await sleep(200);
+    check('the window goes fullscreen too', win().isFullScreen());
+    v = await view();
+    check('the frame grows', v.fw > windowed.fw && v.fh > windowed.fh, `${windowed.fw}x${windowed.fh} → ${v.fw}x${v.fh}`);
+    check('and the image refits to it', v.w <= v.fw + 0.5 && v.h <= v.fh + 0.5 && (Math.abs(v.w - v.fw) < 1 || Math.abs(v.h - v.fh) < 1), `${v.w}x${v.h} in ${v.fw}x${v.fh}`);
+    key('Escape'); await sleep(900);
+    check('the window leaves fullscreen', !win().isFullScreen());
+    v = await view();
+    check('and the image refits back', Math.abs(v.w - windowed.w) < 1 && Math.abs(v.h - windowed.h) < 1, `${v.w}x${v.h} vs ${windowed.w}x${windowed.h}`);
     check('Esc leaves fullscreen first', await js(`!document.getElementById('compare-card').classList.contains('is-fullscreen') && !document.getElementById('compare-modal').classList.contains('hidden')`));
     key('Escape'); await sleep(200);
     check('then closes the viewer', await js(`document.getElementById('compare-modal').classList.contains('hidden')`));

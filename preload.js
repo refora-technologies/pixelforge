@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('pixelforge', {
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  setFullScreen: (on) => ipcRenderer.invoke('window-set-fullscreen', on),
   onMaximizedChanged: (cb) => ipcRenderer.on('window-maximized-changed', (e, v) => cb(v)),
 
   // Setup
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld('pixelforge', {
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('show-in-folder', filePath),
+  getThumbnail: (filePath) => ipcRenderer.invoke('get-thumbnail', filePath),
   openLogs: () => ipcRenderer.invoke('open-logs'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 

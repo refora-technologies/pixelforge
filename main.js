@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen, powerSaveBlocker, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -55,7 +55,8 @@ function saveBounds() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
     const maximized = mainWindow.isMaximized();
-    const bounds = maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds();
+    // Closed from the viewer's fullscreen: remember the window, not the screen.
+    const bounds = maximized || mainWindow.isFullScreen() ? mainWindow.getNormalBounds() : mainWindow.getBounds();
     store.set('app.windowBounds', { ...bounds, maximized });
   } catch {}
 }
@@ -171,6 +172,8 @@ ipcMain.handle('window-minimize', () => mainWindow?.minimize());
 ipcMain.handle('window-maximize', () => { mainWindow?.isMaximized() ? mainWindow.unmaximize() : mainWindow?.maximize(); });
 ipcMain.handle('window-close', () => mainWindow?.close());
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false);
+// The viewer's fullscreen takes the whole screen, taskbar included.
+ipcMain.handle('window-set-fullscreen', (_, on) => { mainWindow?.setFullScreen(!!on); });
 
 // ── Setup ──
 ipcMain.handle('check-setup', () => setup.checkSetup());
@@ -332,6 +335,35 @@ ipcMain.handle('open-folder', (_, folderPath) => {
 ipcMain.handle('open-file', (_, filePath) => {
   if (!guard.isOpenableFile(filePath) || !isFile(filePath)) return 'That file can’t be opened from PixelForge.';
   return shell.openPath(filePath);
+});
+// Results tiles are ~130 px, but a 4× upscale is tens of megapixels; decoding
+// dozens of those in the window made scrolling stutter. Windows' thumbnailer
+// makes a small copy instead. Kept per file version, most recent last.
+const THUMB_PX = 320;
+const THUMB_CACHE_MAX = 400;
+const thumbCache = new Map();
+ipcMain.handle('get-thumbnail', async (_, filePath) => {
+  if (!guard.isOpenableFile(filePath)) return null;
+  let st;
+  try { st = await fs.promises.stat(filePath); } catch { return null; }
+  if (!st.isFile()) return null;
+  const key = `${filePath}|${st.size}|${st.mtimeMs}`;
+  if (thumbCache.has(key)) {
+    const url = thumbCache.get(key);
+    thumbCache.delete(key);
+    thumbCache.set(key, url);
+    return url;
+  }
+  try {
+    const img = await nativeImage.createThumbnailFromPath(filePath, { width: THUMB_PX, height: THUMB_PX });
+    if (img.isEmpty()) return null;
+    const url = img.toDataURL(); // PNG, so transparent results stay transparent
+    thumbCache.set(key, url);
+    if (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+    return url;
+  } catch {
+    return null; // no thumbnailer for this format; the tile falls back to the file
+  }
 });
 ipcMain.handle('show-in-folder', (_, filePath) => {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) return false;
