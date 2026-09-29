@@ -6,10 +6,15 @@ const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 
+// A connection that goes quiet for this long is treated as dead. Without it a
+// stalled download sits at the same percentage forever with no way out.
+// PF_NET_IDLE_MS lets the test suite exercise this without waiting 30 seconds.
+const IDLE_TIMEOUT_MS = Number(process.env.PF_NET_IDLE_MS) || 30000;
+
 function requestWithRedirects(url, onResponse, onError, depth = 0) {
   if (depth > 8) { onError(new Error('Too many redirects')); return; }
   const protocol = url.startsWith('https') ? https : http;
-  protocol.get(url, { headers: { 'User-Agent': 'PixelForge' } }, (res) => {
+  const req = protocol.get(url, { headers: { 'User-Agent': 'PixelForge' } }, (res) => {
     if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
       res.resume();
       // Location may be relative — resolve it against the URL we just asked for.
@@ -24,8 +29,12 @@ function requestWithRedirects(url, onResponse, onError, depth = 0) {
       onError(new Error(`HTTP ${res.statusCode}`));
       return;
     }
+    // A dropped connection can end the stream early without an 'error'.
+    res.on('aborted', () => onError(new Error('The connection was interrupted.')));
     onResponse(res);
-  }).on('error', onError);
+  });
+  req.setTimeout(IDLE_TIMEOUT_MS, () => req.destroy(new Error('The connection timed out. Check your internet connection and try again.')));
+  req.on('error', onError);
 }
 
 function downloadFile(url, destPath, onProgress) {
@@ -52,6 +61,10 @@ function downloadFile(url, destPath, onProgress) {
       res.on('error', fail);
       file.on('finish', () => {
         if (settled) return;
+        if (total > 0 && downloaded !== total) {
+          fail(new Error(`Download incomplete (${downloaded} of ${total} bytes).`));
+          return;
+        }
         settled = true;
         resolve({ bytes: downloaded });
       });
@@ -97,6 +110,7 @@ function getGithubLatestRelease(owner, repo) {
         try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
       });
     });
+    req.setTimeout(IDLE_TIMEOUT_MS, () => req.destroy(new Error('Update check timed out.')));
     req.on('error', reject);
     req.end();
   });

@@ -1,8 +1,7 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, screen } = require('electron');
 const path = require('path');
-const fs = require('fs');
 
 const store = require('./src/main/store');
 const paths = require('./src/main/paths');
@@ -11,6 +10,12 @@ const setup = require('./src/main/setup');
 const gpu = require('./src/main/gpu');
 const updater = require('./src/main/updater');
 const pipeline = require('./src/main/pipeline');
+const { collectInputs } = require('./src/main/scan');
+
+// One window, one pipeline. A second instance would share the same settings
+// and output folders, and two Replace-mode runs would clean up each other's work.
+const hasInstanceLock = app.requestSingleInstanceLock();
+if (!hasInstanceLock) app.quit();
 
 let mainWindow = null;
 
@@ -18,10 +23,26 @@ function send(channel, data) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data);
 }
 
+const MIN_VISIBLE = 120;
+
+// Saved bounds from a monitor that has since been unplugged would put the
+// window somewhere no display covers — to the user, the app just never opens.
 function getSavedBounds() {
   const b = store.get('app.windowBounds', null);
   if (!b || typeof b.width !== 'number' || typeof b.height !== 'number') return null;
-  return b;
+  if (typeof b.x !== 'number' || typeof b.y !== 'number') return { width: b.width, height: b.height, maximized: !!b.maximized };
+
+  const onScreen = screen.getAllDisplays().some(({ workArea: a }) =>
+    Math.min(b.x + b.width, a.x + a.width) - Math.max(b.x, a.x) >= MIN_VISIBLE &&
+    Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y) >= MIN_VISIBLE / 2);
+  if (onScreen) return b;
+
+  const area = screen.getPrimaryDisplay().workArea;
+  return {
+    width: Math.min(b.width, area.width),
+    height: Math.min(b.height, area.height),
+    maximized: !!b.maximized,
+  };
 }
 
 function saveBounds() {
@@ -43,15 +64,22 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 620,
     frame: false,
-    backgroundColor: '#080b18',
+    // Matches the page background so there's no flash before first paint.
+    backgroundColor: store.get('app.theme', 'dark') === 'light' ? '#f4f5fa' : '#0a0a12',
     icon: path.join(__dirname, 'assets', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
     show: false,
   });
+
+  // The window only ever shows the bundled UI. A file dropped outside the drop
+  // zone would otherwise navigate away and replace the whole app with an image.
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   mainWindow.once('ready-to-show', () => {
@@ -99,10 +127,20 @@ async function maybeAutoCheckUpdates() {
   } catch {}
 }
 
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
-  paths.ensureDir(paths.getBinDir());
-  paths.ensureDir(paths.getUpscaledDir());
-  paths.ensureDir(paths.getCompressedDir());
+  if (!hasInstanceLock) return;
+  // Nothing here may stop the window from appearing. An output folder on an
+  // unplugged drive is reported when a run starts, not by refusing to open.
+  paths.tryEnsureDir(paths.getBinDir());
+  paths.tryEnsureDir(paths.getUpscaledDir());
+  paths.tryEnsureDir(paths.getCompressedDir());
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
@@ -141,38 +179,24 @@ ipcMain.handle('select-images', async () => {
 });
 
 // ── Scan (accepts mixed files and folders) ──
-// Async on purpose: a synchronous walk over a large tree blocks the main
-// process and freezes the window along with it.
+// Same walker and exclusions as the pipeline, so the count shown is the count run.
 ipcMain.handle('scan-inputs', async (_, inputs, recursive) => {
+  const entries = await collectInputs(inputs, {
+    recursive: !!recursive,
+    excludeDirs: [paths.getUpscaledDir(), paths.getCompressedDir()],
+    withSize: true,
+  });
   const images = [];
   const perPath = {};
-
-  const pushImage = async (full, name) => {
-    try {
-      const stat = await fs.promises.stat(full);
-      images.push({ name, path: full, size: stat.size, ext: path.extname(name).toLowerCase() });
-      return true;
-    } catch { return false; }
-  };
-
-  const walk = async (dir) => {
-    let entries;
-    try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) { if (recursive) await walk(full); continue; }
-      if (paths.IMAGE_RE.test(e.name)) await pushImage(full, e.name);
+  const missing = [];
+  for (const entry of entries) {
+    perPath[entry.input] = entry.files.length;
+    if (entry.missing) missing.push(entry.input);
+    for (const f of entry.files) {
+      images.push({ name: path.basename(f.abs), path: f.abs, size: f.size, ext: path.extname(f.abs).toLowerCase() });
     }
-  };
-
-  for (const p of inputs || []) {
-    let stat;
-    try { stat = await fs.promises.stat(p); } catch { perPath[p] = 0; continue; }
-    if (stat.isDirectory()) { const before = images.length; await walk(p); perPath[p] = images.length - before; }
-    else if (paths.IMAGE_RE.test(p)) perPath[p] = (await pushImage(p, path.basename(p))) ? 1 : 0;
-    else perPath[p] = 0;
   }
-  return { images, count: images.length, perPath };
+  return { images, count: images.length, perPath, missing };
 });
 
 // ── Pipeline ──
@@ -251,6 +275,15 @@ ipcMain.handle('download-update', async (_, { assetUrl, assetName, checksumUrl }
   }
 });
 ipcMain.handle('run-installer', async (_, installerPath) => {
-  try { await shell.openPath(installerPath); setTimeout(() => app.quit(), 800); return { ok: true }; }
-  catch (err) { return { ok: false, error: err.message }; }
+  // Only ever launch the installer this session downloaded into Downloads.
+  if (!/PixelForge-Setup.*\.exe$/i.test(String(installerPath)) ||
+      !paths.isStrictlyInside(installerPath, app.getPath('downloads'))) {
+    return { ok: false, error: 'That installer path is not one PixelForge downloaded.' };
+  }
+  // openPath reports failure through its return value, not by throwing — quit
+  // only once the installer has actually launched.
+  const error = await shell.openPath(installerPath);
+  if (error) return { ok: false, error };
+  setTimeout(() => app.quit(), 800);
+  return { ok: true };
 });
