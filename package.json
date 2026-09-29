@@ -28,6 +28,7 @@
     "shoot": "electron tools/shoot.js",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir",
+    "installer-art": "electron tools/make-installer-art.js",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
@@ -53,9 +54,11 @@
       "preload.js",
       "src/**/*",
       "!src/models/**/*",
-      "assets/**/*",
+      "assets/icon.ico",
       "node_modules/**/*",
-      "!node_modules/.cache/**/*"
+      "!node_modules/.cache/**/*",
+      "!node_modules/@types/**/*",
+      "!node_modules/undici-types/**/*"
     ],
     "extraResources": [
       {
@@ -83,6 +86,9 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "uninstallerSidebar": "build/installer-sidebar.bmp",
+      "installerHeader": "build/installer-header.bmp",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "PixelForge",
